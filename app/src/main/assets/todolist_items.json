@@ -1,0 +1,32 @@
+[
+  {
+    "id": "1",
+    "text": "Walk the dog",
+    "isCompleted": false,
+    "notes": "Morning walk in the park."
+  },
+  {
+    "id": "2",
+    "text": "Buy groceries",
+    "isCompleted": true,
+    "notes": "Milk, eggs, bread, and cheese."
+  },
+  {
+    "id": "3",
+    "text": "Read a chapter of 'Atomic Habits'",
+    "isCompleted": false,
+    "notes": ""
+  },
+  {
+    "id": "4",
+    "text": "Plan weekend trip",
+    "isCompleted": false,
+    "notes": "Look up hiking trails."
+  },
+  {
+    "id": "5",
+    "text": "Water the plants",
+    "isCompleted": true,
+    "notes": "Especially the new fern."
+  }
+]
