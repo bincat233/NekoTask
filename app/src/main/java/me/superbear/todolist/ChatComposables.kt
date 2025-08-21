@@ -45,7 +45,7 @@ fun ChatInputBar(modifier: Modifier = Modifier) {
         modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = "🤖", modifier = Modifier.padding(end = 8.dp))
+        Text(text = "🐱", modifier = Modifier.padding(end = 8.dp))
         TextField(
             value = text,
             onValueChange = { text = it },
