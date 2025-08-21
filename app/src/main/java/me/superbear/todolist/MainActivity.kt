@@ -3,21 +3,43 @@ package me.superbear.todolist
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,11 +74,17 @@ class MainActivity : ComponentActivity() {
                 }
 
                 var aiReply by remember { mutableStateOf("I can help with that! Just tell me what you want to do.") }
+                var manualMode by remember { mutableStateOf(false) }
+                var manualTitle by remember { mutableStateOf("") }
+                var manualDesc by remember { mutableStateOf("") }
+
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     Scaffold(
                         bottomBar = {
-                            ChatInputBar(modifier = Modifier.imePadding())
+                            if (!manualMode) {
+                                ChatInputBar(modifier = Modifier.imePadding())
+                            }
                         },
                         modifier = Modifier.fillMaxSize()
                     ) { innerPadding ->
@@ -113,6 +141,33 @@ class MainActivity : ComponentActivity() {
                             .padding(bottom = 80.dp) // Position above the ChatInputBar
                             .imePadding()
                     )
+                    if (!manualMode) {
+                        ManualAddFab(
+                            onClick = { manualMode = true },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = 96.dp) // sits above ChatInputBar
+                        )
+                    }
+
+                    if (manualMode) {
+                        Scrim(onDismiss = { manualMode = false }, modifier = Modifier.fillMaxSize())
+                        ManualAddCard(
+                            title = manualTitle,
+                            onTitleChange = { manualTitle = it },
+                            description = manualDesc,
+                            onDescriptionChange = { manualDesc = it },
+                            onSend = {
+                                // UI-only: clear and close
+                                manualTitle = ""
+                                manualDesc = ""
+                                manualMode = false
+                            },
+                            onCancel = { manualMode = false },
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                        )
+                    }
+                    BackHandler(enabled = manualMode) { manualMode = false }
                 }
             }
         }
@@ -162,5 +217,100 @@ fun CheckableList(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun ManualAddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    ExtendedFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier,
+        icon = { Icon(Icons.Default.Add, contentDescription = "Add Task") },
+        text = { Text("Add") }
+    )
+}
+
+@Composable
+fun ManualAddCard(
+    title: String,
+    onTitleChange: (String) -> Unit,
+    description: String,
+    onDescriptionChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = true,
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut(),
+        modifier = modifier
+    ) {
+        Surface(
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            shadowElevation = 8.dp,
+            modifier = modifier
+                .fillMaxWidth()
+                .imePadding()
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Text("Manual Add Card (TEST)")
+                TextField(
+                    value = title,
+                    onValueChange = onTitleChange,
+                    placeholder = { Text("What would you like to do?") },
+                    textStyle = MaterialTheme.typography.titleMedium,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.padding(8.dp))
+                TextField(
+                    value = description,
+                    onValueChange = onDescriptionChange,
+                    placeholder = { Text("Description") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 80.dp)
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { /*TODO*/ }) {
+                        Icon(Icons.Default.Event, contentDescription = "Due date")
+                    }
+                    IconButton(onClick = { /*TODO*/ }) {
+                        Icon(Icons.Default.Flag, contentDescription = "Priority")
+                    }
+                    IconButton(onClick = { /*TODO*/ }) {
+                        Icon(Icons.Default.Folder, contentDescription = "Project")
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = onCancel) {
+                        Text("Cancel")
+                    }
+                    Button(onClick = onSend, enabled = title.isNotBlank()) {
+                        Text("Send")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun Scrim(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) { onDismiss() }
+    ) {
+        Surface(
+            color = Color.Black.copy(alpha = 0.35f),
+            modifier = Modifier.fillMaxSize()
+        ) {}
     }
 }
