@@ -1,5 +1,6 @@
 package me.superbear.todolist.ui.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -45,44 +47,30 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import me.superbear.todolist.ChatInputBar
 import me.superbear.todolist.SpeechBubble
 import me.superbear.todolist.Task
 
-data class UiState(
-    val items: List<Task>,
-    val manualMode: Boolean,
-    val manualTitle: String,
-    val manualDesc: String,
-    val bubbleStack: List<String>,
-    val fabWidthDp: Dp,
-    val imeVisible: Boolean
-)
-
-sealed class UiEvent {
-    data class ToggleTask(val task: Task) : UiEvent()
-    object OpenManual : UiEvent()
-    object CloseManual : UiEvent()
-    data class ChangeTitle(val value: String) : UiEvent()
-    data class ChangeDesc(val value: String) : UiEvent()
-    object SendManual : UiEvent()
-    data class FabMeasured(val widthDp: Dp) : UiEvent()
-}
-
 @Composable
 fun MainScreen(
-    state: UiState,
-    onEvent: (UiEvent) -> Unit
+    viewModel: MainViewModel = viewModel()
 ) {
+    val state by viewModel.uiState.collectAsState()
+    val onEvent = viewModel::onEvent
     val localDensity = LocalDensity.current
+
+    BackHandler(enabled = state.manualMode) { onEvent(UiEvent.CloseManual) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
                 if (!state.manualMode) {
-                    ChatInputBar(modifier = Modifier.imePadding())
+                    ChatInputBar(
+                        onSend = { onEvent(UiEvent.SendChat(it)) },
+                        modifier = Modifier.imePadding()
+                    )
                 }
             },
             floatingActionButton = {
@@ -133,7 +121,8 @@ fun MainScreen(
         state.bubbleStack.forEachIndexed { index, text ->
             val isLast = index == state.bubbleStack.lastIndex
             val avoidancePadding by animateDpAsState(
-                if (isLast && !state.imeVisible && !state.manualMode) state.fabWidthDp + 16.dp else 0.dp
+                if (isLast && !state.imeVisible && !state.manualMode) state.fabWidthDp + 16.dp else 0.dp,
+                label = ""
             )
 
             SpeechBubble(

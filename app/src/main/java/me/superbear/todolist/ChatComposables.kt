@@ -38,7 +38,10 @@ fun SpeechBubble(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ChatInputBar(modifier: Modifier = Modifier) {
+fun ChatInputBar(
+    onSend: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     var text by remember { mutableStateOf("") }
 
     Row(
@@ -57,7 +60,15 @@ fun ChatInputBar(modifier: Modifier = Modifier) {
                 unfocusedIndicatorColor = Color.Transparent
             )
         )
-        IconButton(onClick = { /* TODO: Handle send action */ }) {
+        IconButton(
+            onClick = {
+                if (text.isNotBlank()) {
+                    onSend(text)
+                    text = ""
+                }
+            },
+            enabled = text.isNotBlank()
+        ) {
             Icon(
                 imageVector = Icons.Filled.Send,
                 contentDescription = "Send"
