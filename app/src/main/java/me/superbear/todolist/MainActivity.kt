@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -16,9 +17,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,15 +46,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -73,17 +81,31 @@ class MainActivity : ComponentActivity() {
                     allItems = todoRepository.getTasks("todolist_items.json")
                 }
 
-                var aiReply by remember { mutableStateOf("I can help with that! Just tell me what you want to do.") }
+                var bubbleStack by remember { mutableStateOf(listOf("I can help with that! Just tell me what you want to do.")) }
                 var manualMode by remember { mutableStateOf(false) }
                 var manualTitle by remember { mutableStateOf("") }
                 var manualDesc by remember { mutableStateOf("") }
 
+                val imeVisible = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+                var fabWidth by remember { mutableStateOf(0.dp) }
+                val localDensity = LocalDensity.current
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     Scaffold(
                         bottomBar = {
                             if (!manualMode) {
                                 ChatInputBar(modifier = Modifier.imePadding())
+                            }
+                        },
+                        floatingActionButton = {
+                            if (!manualMode && !imeVisible) {
+                                ManualAddFab(
+                                    onClick = { manualMode = true },
+                                    modifier = Modifier
+                                        .onSizeChanged {
+                                            fabWidth = with(localDensity) { it.width.toDp() }
+                                        }
+                                )
                             }
                         },
                         modifier = Modifier.fillMaxSize()
@@ -134,19 +156,20 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                    SpeechBubble(
-                        text = aiReply,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(bottom = 80.dp) // Position above the ChatInputBar
-                            .imePadding()
-                    )
-                    if (!manualMode) {
-                        ManualAddFab(
-                            onClick = { manualMode = true },
+                    val bottomPadding = 80.dp
+                    bubbleStack.forEachIndexed { index, text ->
+                        val isLast = index == bubbleStack.lastIndex
+                        val avoidancePadding by animateDpAsState(
+                            if (isLast && !imeVisible && !manualMode) fabWidth + 16.dp else 0.dp
+                        )
+
+                        SpeechBubble(
+                            text = text,
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(end = 16.dp, bottom = 96.dp) // sits above ChatInputBar
+                                .align(Alignment.BottomStart)
+                                .padding(bottom = bottomPadding * (bubbleStack.size - index))
+                                .padding(end = avoidancePadding)
+                                .imePadding()
                         )
                     }
 
