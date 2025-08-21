@@ -104,29 +104,31 @@ fun MainScreen(
             val unfinishedItems = state.items.filter { it.status == "OPEN" }
             val finishedItems = state.items.filter { it.status == "DONE" }
 
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
             ) {
-                Text(
-                    text = "Unfinished",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                CheckableList(
-                    items = unfinishedItems,
-                    onItemToggle = { onEvent(UiEvent.ToggleTask(it)) }
-                )
-                Text(
-                    text = "Finished",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                CheckableList(
-                    items = finishedItems,
-                    onItemToggle = { onEvent(UiEvent.ToggleTask(it)) }
-                )
+                item {
+                    Text(
+                        text = "Unfinished",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+                items(unfinishedItems) { item ->
+                    TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
+                }
+                item {
+                    Text(
+                        text = "Finished",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+                items(finishedItems) { item ->
+                    TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
+                }
             }
         }
 
@@ -163,32 +165,24 @@ fun MainScreen(
 }
 
 @Composable
-fun CheckableList(
-    items: List<Task>,
-    onItemToggle: (Task) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyColumn(modifier = modifier.fillMaxWidth()) {
-        items(items, key = { it.id }) { item ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onItemToggle(item) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Checkbox(
-                    checked = item.status == "DONE",
-                    onCheckedChange = { onItemToggle(item) }
-                )
-                Text(
-                    text = item.title,
-                    modifier = Modifier.padding(start = 8.dp),
-                    color = if (item.status == "DONE") Color.Gray else Color.Unspecified,
-                    textDecoration = if (item.status == "DONE") TextDecoration.LineThrough else null
-                )
-            }
-        }
+fun TaskItem(task: Task, onToggle: (Task) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle(task) }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = task.status == "DONE",
+            onCheckedChange = { onToggle(task) }
+        )
+        Text(
+            text = task.title,
+            modifier = Modifier.padding(start = 8.dp),
+            color = if (task.status == "DONE") Color.Gray else Color.Unspecified,
+            textDecoration = if (task.status == "DONE") TextDecoration.LineThrough else null
+        )
     }
 }
 
