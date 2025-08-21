@@ -68,5 +68,75 @@
     "createdAtIso": "2024-01-03T10:00:00Z",
     "notes": "Perfect ambush spot.",
     "status": "OPEN"
+  },
+  {
+    "id": 11,
+    "title": "Stare at the wall mysteriously",
+    "createdAtIso": "2024-01-03T11:00:00Z",
+    "notes": "Spook the humans a little.",
+    "status": "OPEN"
+  },
+  {
+    "id": 12,
+    "title": "Bat at dangling string",
+    "createdAtIso": "2024-01-03T12:30:00Z",
+    "notes": "Impossible to resist.",
+    "status": "OPEN"
+  },
+  {
+    "id": 13,
+    "title": "Guard the doorway",
+    "createdAtIso": "2024-01-03T13:00:00Z",
+    "notes": "Block humans from passing.",
+    "status": "DONE"
+  },
+  {
+    "id": 14,
+    "title": "Chirp at the birds outside",
+    "createdAtIso": "2024-01-03T14:00:00Z",
+    "notes": "Practice hunter mode.",
+    "status": "OPEN"
+  },
+  {
+    "id": 15,
+    "title": "Flip upside down dramatically",
+    "createdAtIso": "2024-01-03T15:00:00Z",
+    "notes": "Exposing belly trap.",
+    "status": "OPEN"
+  },
+  {
+    "id": 16,
+    "title": "Steal a sock",
+    "createdAtIso": "2024-01-03T16:00:00Z",
+    "notes": "Hide it under the couch.",
+    "status": "DONE"
+  },
+  {
+    "id": 17,
+    "title": "Scratch the scratching post",
+    "createdAtIso": "2024-01-03T17:00:00Z",
+    "notes": "Or maybe the sofa...",
+    "status": "OPEN"
+  },
+  {
+    "id": 18,
+    "title": "Chase tail in circles",
+    "createdAtIso": "2024-01-03T18:00:00Z",
+    "notes": "Almost caught it this time!",
+    "status": "OPEN"
+  },
+  {
+    "id": 19,
+    "title": "Drink water from the faucet",
+    "createdAtIso": "2024-01-03T19:00:00Z",
+    "notes": "Tastes better than the bowl.",
+    "status": "DONE"
+  },
+  {
+    "id": 20,
+    "title": "Watch the moon from the window",
+    "createdAtIso": "2024-01-03T21:00:00Z",
+    "notes": "Night patrol duty.",
+    "status": "OPEN"
   }
 ]
