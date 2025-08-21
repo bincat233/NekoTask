@@ -1,36 +1,36 @@
 [
   {
     "id": 1,
-    "title": "Walk the dog",
+    "title": "Chase the red dot",
     "createdAtIso": "2024-01-01T10:00:00Z",
-    "notes": "Morning walk in the park.",
+    "notes": "Laser pointer time!",
     "status": "OPEN"
   },
   {
     "id": 2,
-    "title": "Buy groceries",
+    "title": "Take a sunny nap",
     "createdAtIso": "2024-01-01T11:00:00Z",
-    "notes": "Milk, eggs, bread, and cheese.",
+    "notes": "Stretch out on the windowsill.",
     "status": "DONE"
   },
   {
     "id": 3,
-    "title": "Read a chapter of 'Atomic Habits'",
+    "title": "Inspect the cardboard box",
     "createdAtIso": "2024-01-02T14:00:00Z",
     "status": "OPEN"
   },
   {
     "id": 4,
-    "title": "Plan weekend trip",
+    "title": "Ask for treats",
     "createdAtIso": "2024-01-02T16:00:00Z",
-    "notes": "Look up hiking trails.",
+    "notes": "Meow until human gives snacks.",
     "status": "OPEN"
   },
   {
     "id": 5,
-    "title": "Water the plants",
+    "title": "Knock the pen off the table",
     "createdAtIso": "2024-01-03T09:00:00Z",
-    "notes": "Especially the new fern.",
+    "notes": "Mission accomplished with a paw tap.",
     "status": "DONE"
   }
 ]
