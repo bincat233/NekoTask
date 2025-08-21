@@ -2,7 +2,7 @@
   {
     "id": 1,
     "title": "Chase the red dot",
-    "createdAtIso": "2024-01-01T10:00:00Z",
+    "createdAtIso": "2024-01-01T09:00:00Z",
     "notes": "Laser pointer time!",
     "status": "OPEN"
   },
@@ -16,21 +16,57 @@
   {
     "id": 3,
     "title": "Inspect the cardboard box",
-    "createdAtIso": "2024-01-02T14:00:00Z",
+    "createdAtIso": "2024-01-01T14:00:00Z",
+    "notes": "Perfect hiding spot?",
     "status": "OPEN"
   },
   {
     "id": 4,
     "title": "Ask for treats",
-    "createdAtIso": "2024-01-02T16:00:00Z",
-    "notes": "Meow until human gives snacks.",
+    "createdAtIso": "2024-01-01T16:00:00Z",
+    "notes": "Meow until snacks appear.",
     "status": "OPEN"
   },
   {
     "id": 5,
     "title": "Knock the pen off the table",
-    "createdAtIso": "2024-01-03T09:00:00Z",
-    "notes": "Mission accomplished with a paw tap.",
+    "createdAtIso": "2024-01-02T09:30:00Z",
+    "notes": "One gentle paw tap.",
     "status": "DONE"
+  },
+  {
+    "id": 6,
+    "title": "Do a midnight zoomie",
+    "createdAtIso": "2024-01-02T00:00:00Z",
+    "notes": "Run across the house at top speed!",
+    "status": "OPEN"
+  },
+  {
+    "id": 7,
+    "title": "Sit on the laptop keyboard",
+    "createdAtIso": "2024-01-02T13:00:00Z",
+    "notes": "Best way to get attention.",
+    "status": "OPEN"
+  },
+  {
+    "id": 8,
+    "title": "Knead the blanket",
+    "createdAtIso": "2024-01-02T18:00:00Z",
+    "notes": "Purr while making biscuits.",
+    "status": "DONE"
+  },
+  {
+    "id": 9,
+    "title": "Chase a butterfly (dream version)",
+    "createdAtIso": "2024-01-03T08:00:00Z",
+    "notes": "Saw it in the garden once.",
+    "status": "OPEN"
+  },
+  {
+    "id": 10,
+    "title": "Hide in the laundry basket",
+    "createdAtIso": "2024-01-03T10:00:00Z",
+    "notes": "Perfect ambush spot.",
+    "status": "OPEN"
   }
 ]
