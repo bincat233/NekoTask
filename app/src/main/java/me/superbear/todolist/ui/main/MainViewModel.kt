@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
+import me.superbear.todolist.ChatMessage
+import me.superbear.todolist.Sender
 import me.superbear.todolist.Task
 import me.superbear.todolist.TodoRepository
 
@@ -18,7 +21,7 @@ data class UiState(
     val manualMode: Boolean,
     val manualTitle: String,
     val manualDesc: String,
-    val bubbleStack: List<String>,
+    val messages: List<ChatMessage>,
     val fabWidthDp: Dp,
     val imeVisible: Boolean
 )
@@ -44,7 +47,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         manualMode = false,
         manualTitle = "",
         manualDesc = "",
-        bubbleStack = emptyList(),
+        messages = emptyList(),
         fabWidthDp = 0.dp,
         imeVisible = false
     ))
@@ -78,8 +81,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             is UiEvent.SendChat -> {
+                val chatMessage = ChatMessage(
+                    text = event.message,
+                    sender = Sender.User,
+                    timestamp = Clock.System.now()
+                )
                 _uiState.update {
-                    it.copy(bubbleStack = it.bubbleStack + event.message)
+                    it.copy(messages = it.messages + chatMessage)
                 }
             }
             is UiEvent.FabMeasured -> _uiState.update { it.copy(fabWidthDp = event.widthDp) }

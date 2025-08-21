@@ -118,18 +118,18 @@ fun MainScreen(
         }
 
         val bottomPadding = 80.dp
-        state.bubbleStack.forEachIndexed { index, text ->
-            val isLast = index == state.bubbleStack.lastIndex
+        state.messages.forEachIndexed { index, message ->
+            val isLast = index == state.messages.lastIndex
             val avoidancePadding by animateDpAsState(
                 if (isLast && !state.imeVisible && !state.manualMode) state.fabWidthDp + 16.dp else 0.dp,
                 label = ""
             )
 
             SpeechBubble(
-                text = text,
+                text = message.text,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(bottom = bottomPadding * (state.bubbleStack.size - index))
+                    .padding(bottom = bottomPadding * (state.messages.size - index))
                     .padding(end = avoidancePadding)
                     .imePadding()
             )
