@@ -1,32 +1,36 @@
 [
   {
-    "id": "1",
-    "text": "Walk the dog",
-    "isCompleted": false,
-    "notes": "Morning walk in the park."
+    "id": 1,
+    "title": "Walk the dog",
+    "createdAtIso": "2024-01-01T10:00:00Z",
+    "notes": "Morning walk in the park.",
+    "status": "OPEN"
   },
   {
-    "id": "2",
-    "text": "Buy groceries",
-    "isCompleted": true,
-    "notes": "Milk, eggs, bread, and cheese."
+    "id": 2,
+    "title": "Buy groceries",
+    "createdAtIso": "2024-01-01T11:00:00Z",
+    "notes": "Milk, eggs, bread, and cheese.",
+    "status": "DONE"
   },
   {
-    "id": "3",
-    "text": "Read a chapter of 'Atomic Habits'",
-    "isCompleted": false,
-    "notes": ""
+    "id": 3,
+    "title": "Read a chapter of 'Atomic Habits'",
+    "createdAtIso": "2024-01-02T14:00:00Z",
+    "status": "OPEN"
   },
   {
-    "id": "4",
-    "text": "Plan weekend trip",
-    "isCompleted": false,
-    "notes": "Look up hiking trails."
+    "id": 4,
+    "title": "Plan weekend trip",
+    "createdAtIso": "2024-01-02T16:00:00Z",
+    "notes": "Look up hiking trails.",
+    "status": "OPEN"
   },
   {
-    "id": "5",
-    "text": "Water the plants",
-    "isCompleted": true,
-    "notes": "Especially the new fern."
+    "id": 5,
+    "title": "Water the plants",
+    "createdAtIso": "2024-01-03T09:00:00Z",
+    "notes": "Especially the new fern.",
+    "status": "DONE"
   }
 ]

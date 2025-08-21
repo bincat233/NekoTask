@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // enableEdgeToEdge allows the app to draw behind system bars for a more immersive experience.
         enableEdgeToEdge()
-        // setContent is used to define the layout of the Activity using Jetpack Compose.
+        // setContent is used to define the layout of the Acvtivity using Jetpack Compose.
         setContent {
             // MyApplicationTheme is a custom theme for the application.
             TodolistTheme {
@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
                 // 'remember' ensures this state survives recompositions.
                 // 'allItems' will hold the list of to-do items.
                 // 'by' delegate allows direct get/set on allItems as if it were a regular var.
-                var allItems by remember { mutableStateOf(emptyList<TodoItem>()) }
+                var allItems by remember { mutableStateOf(emptyList<Task>()) }
 
                 // 'rememberCoroutineScope' gets a CoroutineScope tied to this Composable's lifecycle.
                 // This scope is used to launch coroutines for asynchronous operations.
@@ -68,22 +68,22 @@ class MainActivity : ComponentActivity() {
                 // 'key1 = Unit' means this effect runs once when the Composable is first displayed.
                 LaunchedEffect(key1 = Unit) {
                     // Fetch the to-do items from the repository. This is a suspend function call.
-                    allItems = todoRepository.getTodoItems("todolist_items.json")
+                    allItems = todoRepository.getTasks("todolist_items.json")
                 }
 
                 // Scaffold provides a standard layout structure (app bars, floating action buttons, etc.).
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     // Filter the list of all items into unfinished and finished items.
                     // This is done based on the 'isCompleted' property of each TodoItem.
-                    val unfinishedItems = allItems.filter { !it.isCompleted }
-                    val finishedItems = allItems.filter { it.isCompleted }
+                    val unfinishedItems = allItems.filter { it.status == "OPEN" }
+                    val finishedItems = allItems.filter { it.status == "DONE" }
 
                     // Define a lambda function to handle toggling the completion status of a TodoItem.
                     // Explicitly define the type as (TodoItem) -> Unit to match CheckableList's expectation.
-                    val onItemToggleLambda: (TodoItem) -> Unit = { toggledItem ->
+                    val onItemToggleLambda: (Task) -> Unit = { toggledItem ->
                         // Create a new TodoItem with the 'isCompleted' status flipped.
                         // It's important to create a new object for state updates to be properly detected by Compose.
-                        val updatedItem = toggledItem.copy(isCompleted = !toggledItem.isCompleted)
+                        val updatedItem = toggledItem.copy(status = if (toggledItem.status == "DONE") "OPEN" else "DONE")
 
                         // Optimistic UI Update: Update the UI immediately for responsiveness.
                         // Create a new list with the updated item to trigger recomposition.
@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
                         // This prevents blocking the UI thread during the (simulated) network operation.
                         coroutineScope.launch {
                             // Call the suspend function in the repository to simulate updating the server.
-                            val success = todoRepository.updateTodoItemOnServer(updatedItem)
+                            val success = todoRepository.updateTaskOnServer(updatedItem)
                             if (success) {
                                 // Log success if the simulated server update was successful.
                                 Log.d("MainActivity", "Item ${updatedItem.id} updated successfully on server.")
@@ -169,8 +169,8 @@ fun GreetingPreview() {
         // To make this preview work, you'd need to define a mock list of TodoItem objects here.
         // For example:
         // val previewItems = listOf(
-        //     TodoItem(id = "1", text = "Preview Item 1", isCompleted = false, notes = "Note 1"),
-        //     TodoItem(id = "2", text = "Preview Item 2", isCompleted = true, notes = "Note 2")
+        //     Task(id = 1, title = "Preview Item 1", createdAtIso = "2024-01-01T10:00:00Z", status = "OPEN"),
+        //     Task(id = 2, title = "Preview Item 2", createdAtIso = "2024-01-01T11:00:00Z", status = "DONE")
         // )
         // Column {
         //     Text("Unfinished Preview")
@@ -184,8 +184,8 @@ fun GreetingPreview() {
 // A Composable function to display a list of to-do items with checkboxes.
 @Composable
 fun CheckableList(
-    items: List<TodoItem>,                      // The list of items to display.
-    onItemToggle: (TodoItem) -> Unit,         // A lambda function to call when an item is toggled.
+    items: List<Task>,                      // The list of items to display.
+    onItemToggle: (Task) -> Unit,         // A lambda function to call when an item is toggled.
     modifier: Modifier = Modifier             // An optional Modifier for customizing the layout.
 ) {
     // LazyColumn is a vertically scrolling list that only composes and lays out the currently visible items.
@@ -205,18 +205,18 @@ fun CheckableList(
             ) {
                 // Checkbox to show the completion status.
                 Checkbox(
-                    checked = item.isCompleted,                // The checked state of the checkbox.
+                    checked = item.status == "DONE",                // The checked state of the checkbox.
                     onCheckedChange = { onItemToggle(item) } // Lambda called when the checkbox state changes.
                     // We could pass null here if the Row's clickable is enough,
                     // but having both is common for accessibility.
                 )
                 // Text to display the to-do item's text.
                 Text(
-                    text = item.text,
+                    text = item.title,
                     modifier = Modifier.padding(start = 8.dp), // Add padding to the left of the text.
                     // Change text color and decoration based on whether the item is completed.
-                    color = if (item.isCompleted) Color.Gray else Color.Unspecified,
-                    textDecoration = if (item.isCompleted) TextDecoration.LineThrough else null
+                    color = if (item.status == "DONE") Color.Gray else Color.Unspecified,
+                    textDecoration = if (item.status == "DONE") TextDecoration.LineThrough else null
                 )
             }
         }

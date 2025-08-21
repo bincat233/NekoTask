@@ -7,22 +7,22 @@ import org.json.JSONArray
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
-// TodoItem data class is defined in its own file: TodoItem.kt
+// Task data class is defined in its own file: Task.kt
 
 /**
- * Repository for handling TodoItem data operations.
+ * Repository for handling Task data operations.
  * This class abstracts the data source (currently a JSON file in assets)
  * from the rest of the application, like the UI (MainActivity).
  */
 class TodoRepository(private val context: Context) {
 
     /**
-     * Loads and parses TodoItems from a JSON file in the assets folder.
+     * Loads and parses Tasks from a JSON file in the assets folder.
      * @param fileName The name of the JSON file in the assets folder (e.g., "todolist_items.json").
-     * @return A list of TodoItem objects.
+     * @return A list of Task objects.
      * Returns an empty list if there's an error during file reading or parsing.
      */
-    fun getTodoItems(fileName: String): List<TodoItem> {
+    fun getTasks(fileName: String): List<Task> {
         return try {
             // Open an InputStream to the asset file.
             val inputStream: InputStream = context.assets.open(fileName)
@@ -38,15 +38,15 @@ class TodoRepository(private val context: Context) {
             val jsonString = String(buffer, StandardCharsets.UTF_8)
             // Parse the JSON string into a JSONArray.
             val jsonArray = JSONArray(jsonString)
-            // Map each JSONObject in the JSONArray to a TodoItem object.
+            // Map each JSONObject in the JSONArray to a Task object.
             List(jsonArray.length()) { i ->
                 val itemJson = jsonArray.getJSONObject(i)
-                TodoItem(
-                    id = itemJson.getString("id"),
-                    text = itemJson.getString("text"),
-                    isCompleted = itemJson.getBoolean("isCompleted"),
-                    notes = itemJson.optString("notes").takeIf { it.isNotEmpty() }
-                    // subItems parsing would go here if we decide to add them later.
+                Task(
+                    id = itemJson.getLong("id"),
+                    title = itemJson.getString("title"),
+                    createdAtIso = itemJson.getString("createdAtIso"),
+                    notes = itemJson.optString("notes").takeIf { it.isNotEmpty() },
+                    status = itemJson.getString("status")
                 )
             }
         } catch (e: Exception) {
@@ -60,27 +60,18 @@ class TodoRepository(private val context: Context) {
     }
 
     /**
-     * Simulates an API call to update a TodoItem on a server.
+     * Simulates an API call to update a Task on a server.
      * In a real application, this function would make an actual network request.
-     * @param item The TodoItem to be updated.
+     * @param item The Task to be updated.
      * @return Boolean indicating whether the simulated update was successful.
      */
-    suspend fun updateTodoItemOnServer(item: TodoItem): Boolean {
+    suspend fun updateTaskOnServer(item: Task): Boolean {
         // Simulate network delay to mimic a real API call.
         delay(500) // 0.5 second delay
 
         // Log the simulated action.
         // In a real app, you would have network request code here (e.g., using Retrofit or Ktor).
-        Log.d("TodoRepository", "Simulating update for item: ${item.id}, text: '${item.text}', isCompleted: ${item.isCompleted} on server.")
-
-        // Example of how you might simulate a chance of failure:
-        // return if (Math.random() > 0.1) { // 90% success rate
-        //     Log.d("TodoRepository", "Update successful for item: ${item.id}")
-        //     true
-        // } else {
-        //     Log.e("TodoRepository", "Simulated network error for item: ${item.id}")
-        //     false
-        // }
+        Log.d("TodoRepository", "Simulating update for item: ${item.id}, title: '${item.title}', status: ${item.status} on server.")
 
         // For now, always simulate success.
         return true

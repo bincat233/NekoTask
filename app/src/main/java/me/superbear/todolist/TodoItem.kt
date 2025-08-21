@@ -1,9 +1,15 @@
 package me.superbear.todolist
 
-data class TodoItem(
-    val id: String,
-    val text: String,
-    var isCompleted: Boolean,
-    val notes: String? = null
-    // val subItems: List<TodoItem>? = null // Can be added later
+data class Task(
+    val id: Long,
+    val title: String,
+    val createdAtIso: String,
+    val notes: String? = null,
+    val dueAtIso: String? = null,
+    val priority: String? = null,
+    val status: String = "OPEN",
+    val aiInsights: String? = null,
+    val origin: String? = null,
+    val updatedAtIso: String? = null,
+    val children: List<Task>? = null
 )
