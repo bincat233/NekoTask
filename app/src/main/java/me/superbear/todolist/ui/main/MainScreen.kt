@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,29 +50,28 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import me.superbear.todolist.Task
 import me.superbear.todolist.ChatInputBar
 import me.superbear.todolist.SpeechBubble
-import androidx.activity.compose.BackHandler
+import me.superbear.todolist.Task
 
 data class UiState(
-    val items: List<Task> = emptyList(),
-    val manualMode: Boolean = false,
-    val manualTitle: String = "",
-    val manualDesc: String = "",
-    val bubbleStack: List<String> = emptyList(),
-    val fabWidthDp: Dp = 0.dp,
-    val imeVisible: Boolean = false
+    val items: List<Task>,
+    val manualMode: Boolean,
+    val manualTitle: String,
+    val manualDesc: String,
+    val bubbleStack: List<String>,
+    val fabWidthDp: Dp,
+    val imeVisible: Boolean
 )
 
-sealed interface UiEvent {
-    data class ToggleTask(val task: Task) : UiEvent
-    object OpenManual : UiEvent
-    object CloseManual : UiEvent
-    data class ChangeTitle(val value: String) : UiEvent
-    data class ChangeDesc(val value: String) : UiEvent
-    object SendManual : UiEvent
-    data class FabMeasured(val widthDp: Dp) : UiEvent
+sealed class UiEvent {
+    data class ToggleTask(val task: Task) : UiEvent()
+    object OpenManual : UiEvent()
+    object CloseManual : UiEvent()
+    data class ChangeTitle(val value: String) : UiEvent()
+    data class ChangeDesc(val value: String) : UiEvent()
+    object SendManual : UiEvent()
+    data class FabMeasured(val widthDp: Dp) : UiEvent()
 }
 
 @Composable
@@ -127,6 +129,7 @@ fun MainScreen(
                 )
             }
         }
+
         val bottomPadding = 80.dp
         state.bubbleStack.forEachIndexed { index, text ->
             val isLast = index == state.bubbleStack.lastIndex
@@ -156,7 +159,6 @@ fun MainScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
-        BackHandler(enabled = state.manualMode) { onEvent(UiEvent.CloseManual) }
     }
 }
 
