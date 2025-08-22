@@ -132,21 +132,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val result = assistantClient.send(event.message, uiState.value.messages)
                     result.onSuccess { assistantResponse ->
-                        val finalAssistantMessage = assistantMessage.copy(
-                            text = assistantResponse,
-                            status = MessageStatus.Sent
-                        )
-                        _uiState.update {
-                            val newMessages = it.messages.map { msg ->
-                                if (msg.id == assistantMessage.id) finalAssistantMessage else msg
+                        val envelopeResult = assistantActionParser.parseEnvelope(assistantResponse)
+                        envelopeResult.onSuccess { envelope ->
+                            val finalAssistantMessage = assistantMessage.copy(
+                                text = envelope.say ?: assistantResponse,
+                                status = MessageStatus.Sent
+                            )
+                            _uiState.update { state ->
+                                val newMessages = state.messages.map { msg ->
+                                    if (msg.id == assistantMessage.id) finalAssistantMessage else msg
+                                }
+                                state.copy(messages = newMessages)
                             }
-                            it.copy(messages = newMessages)
-                        }
 
-                        val actionsResult = assistantActionParser.parse(assistantResponse)
-                        actionsResult.onSuccess { actions ->
                             if (uiState.value.executeAssistantActions) {
-                                actions.forEach { action ->
+                                envelope.actions.forEach { action ->
                                     when (action) {
                                         is AssistantAction.AddTask -> {
                                             val newTask = Task(
@@ -163,8 +163,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                 }
                             } else {
-                                if (actions.isNotEmpty()) {
-                                    Log.d("MainViewModel", "Parsed ${actions.size} actions: $actions")
+                                if (envelope.actions.isNotEmpty()) {
+                                    Log.d("MainViewModel", "Parsed ${envelope.actions.size} actions: ${envelope.actions}")
                                  }
                             }
                         }
@@ -174,11 +174,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             text = "[Error: unable to fetch response]",
                             status = MessageStatus.Failed
                         )
-                        _uiState.update {
-                            val newMessages = it.messages.map { msg ->
+                        _uiState.update { state ->
+                            val newMessages = state.messages.map { msg ->
                                 if (msg.id == assistantMessage.id) finalAssistantMessage else msg
                             }
-                            it.copy(messages = newMessages)
+                            state.copy(messages = newMessages)
                         }
                     }
                 }

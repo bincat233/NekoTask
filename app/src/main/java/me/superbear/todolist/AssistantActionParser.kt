@@ -1,11 +1,17 @@
 package me.superbear.todolist
 
+import android.util.Log
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.decodeFromString
 
 class AssistantActionParser {
+
+    @Serializable
+    private data class EnvelopeDto(
+        val say: String? = null,
+        val actions: List<ActionDto>? = null
+    )
 
     @Serializable
     private data class ActionListDto(
@@ -28,32 +34,76 @@ class AssistantActionParser {
         explicitNulls = false
     }
 
-    private val fencedRegex = Regex("""```(json|JSON)?\s*([\s\S]*?)\s*```""", RegexOption.MULTILINE)
+    private val fencedRegex = Regex("""```(json|JSON)?\s*([\sS]*?)\s*```""", RegexOption.MULTILINE)
 
-    fun parse(text: String): Result<List<AssistantAction>> = runCatching {
-        val jsonText = extractJson(text) ?: return Result.success(emptyList())
-        val dto = json.decodeFromString<ActionListDto>(jsonText)
-        val actions = dto.actions.mapNotNull { a ->
-            when (a.type.lowercase()) {
-                "add_task" -> a.title.trim().takeIf { it.isNotEmpty() }?.let { t ->
-                    AssistantAction.AddTask(
-                        title = t,
-                        notes = a.notes?.trim().takeIf { !it.isNullOrEmpty() },
-                        dueAtIso = a.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
-                        priority = a.priority?.trim().takeIf { !it.isNullOrEmpty() }
-                    )
-                }
-                else -> null
+    fun parseEnvelope(text: String): Result<AssistantEnvelope> {
+        Log.d("AssistantActionParser", "Received data: $text")
+        return runCatching {
+            val jsonText = extractJson(text)
+
+            if (jsonText.isNullOrEmpty()) {
+                return@runCatching AssistantEnvelope(say = text)
             }
-        }
-        actions
-    }.recover { /* Log.w("Parser", "parse failed", it) */ emptyList() }
-        .mapCatching { it } // 保持 Result<List<AssistantAction>>
 
-    private fun extractJson(text: String): String? {
-        fencedRegex.find(text)?.let { return it.groupValues[2].trim() }
-        val first = text.indexOf('{'); val last = text.lastIndexOf('}')
-        return if (first in 0..<last) text.substring(first, last + 1) else null
+            // Try parsing as EnvelopeDto (new format)
+            runCatching { json.decodeFromString<EnvelopeDto>(jsonText) }.getOrNull()?.let { dto ->
+                return@runCatching AssistantEnvelope(
+                    say = dto.say,
+                    actions = dto.actions?.mapNotNull(::mapAction) ?: emptyList()
+                )
+            }
+
+            // Try parsing as ActionListDto (old format)
+            runCatching { json.decodeFromString<ActionListDto>(jsonText) }.getOrNull()?.let { dto ->
+                return@runCatching AssistantEnvelope(
+                    say = null,
+                    actions = dto.actions.mapNotNull(::mapAction)
+                )
+            }
+
+            // Try parsing as single ActionDto (old format)
+            runCatching { json.decodeFromString<ActionDto>(jsonText) }.getOrNull()?.let { dto ->
+                val action = mapAction(dto)
+                return@runCatching AssistantEnvelope(
+                    say = null,
+                    actions = if (action != null) listOf(action) else emptyList()
+                )
+            }
+
+            // If all parsing fails, return the original text as the "say" part
+            AssistantEnvelope(say = text)
+        }.recover {
+            // If any parsing throws an unhandled exception, recover by returning the text.
+            AssistantEnvelope(say = text)
+        }
     }
 
+
+    private fun mapAction(dto: ActionDto): AssistantAction? {
+        return when (dto.type.lowercase()) {
+            "add_task" -> dto.title.trim().takeIf { it.isNotEmpty() }?.let { t ->
+                AssistantAction.AddTask(
+                    title = t,
+                    notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
+                    dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
+                    priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() }
+                )
+            }
+            else -> null
+        }
+    }
+
+    private fun extractJson(text: String): String? {
+        return fencedRegex.find(text)?.let {
+            it.groupValues[2].trim()
+        } ?: run {
+            val first = text.indexOf('{')
+            val last = text.lastIndexOf('}')
+            if (first != -1 && last != -1 && first < last) {
+                text.substring(first, last + 1)
+            } else {
+                null
+            }
+        }
+    }
 }
