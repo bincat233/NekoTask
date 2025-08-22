@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import me.superbear.todolist.AssistantClient
+import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ChatMessage
 import me.superbear.todolist.MockAssistantClient
 import me.superbear.todolist.RealAssistantClient
@@ -56,7 +57,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         manualDesc = "",
         messages = emptyList(),
         fabWidthDp = 0.dp,
-        imeVisible = false
+        imeVisible = false,
+        useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT
     ))
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
