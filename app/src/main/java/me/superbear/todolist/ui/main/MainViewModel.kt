@@ -14,6 +14,7 @@ import kotlinx.datetime.Clock
 import me.superbear.todolist.AssistantClient
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ChatMessage
+import me.superbear.todolist.MessageStatus
 import me.superbear.todolist.MockAssistantClient
 import me.superbear.todolist.RealAssistantClient
 import me.superbear.todolist.Sender
@@ -101,10 +102,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val userMessage = ChatMessage(
                     text = event.message,
                     sender = Sender.User,
-                    timestamp = Clock.System.now()
+                    timestamp = Clock.System.now(),
+                    status = MessageStatus.Sent
+                )
+                val assistantMessage = ChatMessage(
+                    sender = Sender.Assistant,
+                    text = "...",
+                    timestamp = Clock.System.now(),
+                    status = MessageStatus.Sending
                 )
                 _uiState.update {
-                    it.copy(messages = it.messages + userMessage)
+                    it.copy(messages = it.messages + userMessage + assistantMessage)
                 }
 
                 viewModelScope.launch {
@@ -115,22 +123,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val result = assistantClient.send(event.message, uiState.value.messages)
                     result.onSuccess { assistantResponse ->
-                        val assistantMessage = ChatMessage(
+                        val finalAssistantMessage = assistantMessage.copy(
                             text = assistantResponse,
-                            sender = Sender.Assistant,
-                            timestamp = Clock.System.now()
+                            status = MessageStatus.Sent
                         )
                         _uiState.update {
-                            it.copy(messages = it.messages + assistantMessage)
+                            val newMessages = it.messages.map { msg ->
+                                if (msg.id == assistantMessage.id) finalAssistantMessage else msg
+                            }
+                            it.copy(messages = newMessages)
                         }
                     }.onFailure {
-                        val errorMessage = ChatMessage(
-                            text = "Failed to get a response.",
-                            sender = Sender.Assistant,
-                            timestamp = Clock.System.now()
+                        val finalAssistantMessage = assistantMessage.copy(
+                            text = "[Error: unable to fetch response]",
+                            status = MessageStatus.Failed
                         )
                         _uiState.update {
-                            it.copy(messages = it.messages + errorMessage)
+                            val newMessages = it.messages.map { msg ->
+                                if (msg.id == assistantMessage.id) finalAssistantMessage else msg
+                            }
+                            it.copy(messages = newMessages)
                         }
                     }
                 }
