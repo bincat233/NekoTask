@@ -123,8 +123,8 @@ object TaskStateSnapshotBuilder {
                 add(buildJsonObject {
                     put("id", task.id)
                     put("title", task.title.take(100)) // Trim title
-                    task.dueAtIso?.let { put("dueAt", it) }
-                    task.priority?.let { put("priority", it) }
+                    task.dueAt?.let { put("dueAt", it.toString()) }
+                    put("priority", task.priority.name)
                 })
             }
         }

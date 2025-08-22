@@ -3,6 +3,7 @@ package me.superbear.todolist
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.delay
+import kotlinx.datetime.Instant
 import org.json.JSONArray
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
@@ -44,7 +45,7 @@ class TodoRepository(private val context: Context) {
                 Task(
                     id = itemJson.getLong("id"),
                     title = itemJson.getString("title"),
-                    createdAtIso = itemJson.getString("createdAtIso"),
+                    createdAt = Instant.parse(itemJson.getString("createdAtIso")),
                     notes = itemJson.optString("notes").takeIf { it.isNotEmpty() },
                     status = itemJson.getString("status")
                 )
