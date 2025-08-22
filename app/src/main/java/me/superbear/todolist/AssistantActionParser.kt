@@ -126,10 +126,10 @@ class AssistantActionParser {
 }
 
 object TaskStateSnapshotBuilder {
-    fun build(tasks: List<Task>, maxUnfinished: Int = 20): String {
+    fun build(tasks: List<Task>, maxUnfinished: Int = 20, maxFinished: Int = 20): String {
         val now = Clock.System.now().toString()
         val unfinishedTasks = tasks.filter { it.status != "DONE" }
-        val finishedCount = tasks.size - unfinishedTasks.size
+        val finishedTasks = tasks.filter { it.status == "DONE" }
 
         val unfinishedJson = buildJsonArray {
             unfinishedTasks.take(maxUnfinished).forEach { task ->
@@ -142,10 +142,20 @@ object TaskStateSnapshotBuilder {
             }
         }
 
+        val finishedJson = buildJsonArray {
+            finishedTasks.take(maxFinished).forEach { task ->
+                add(buildJsonObject {
+                    put("id", task.id)
+                    put("title", task.title.take(100))
+                })
+            }
+        }
+
         val root = buildJsonObject {
             put("now", now)
             put("unfinished", unfinishedJson)
-            put("finished_count", finishedCount)
+            put("finished", finishedJson)
+            put("finished_count", finishedTasks.size)
         }
         return root.toString()
     }

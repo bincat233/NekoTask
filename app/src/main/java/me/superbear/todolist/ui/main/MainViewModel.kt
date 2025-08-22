@@ -32,6 +32,14 @@ import me.superbear.todolist.Task
 import me.superbear.todolist.TaskStateSnapshotBuilder
 import me.superbear.todolist.TodoRepository
 
+// ⚠️ 提醒：
+// 1. data class 主要是用来保存数据的“数据袋子”，编译器会自动生成
+//    equals/hashCode/toString/copy/componentN 等方法
+//    ——可以写方法，但最好只和数据本身相关，复杂逻辑应放到 ViewModel / Service。
+// 2. 类名后面的小括号就是 **主构造函数** (primary constructor)。
+//    - 写了 val/var 的参数会自动变成属性 (字段)，并生成 getter。
+//    - 可以加默认值，比如 useMockAssistant: Boolean = true。
+//    - 和 Java 里手写构造函数 + 字段声明等价。
 data class UiState(
     val items: List<Task>,
     val manualMode: Boolean,
@@ -44,6 +52,8 @@ data class UiState(
     val executeAssistantActions: Boolean = true
 )
 
+// This is a sealed class that represents all possible UI events
+// 做 “事件总线 / 消息类型枚举” 的事情，用来表达 UI 层可能发生的所有事件。
 sealed class UiEvent {
     data class ToggleTask(val task: Task) : UiEvent()
     object OpenManual : UiEvent()
@@ -64,7 +74,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val realAssistantClient: AssistantClient = RealAssistantClient()
     private val assistantActionParser = AssistantActionParser()
     private val json = Json { prettyPrint = true }
-
+    // _uiState 内部可变，如果是 uiState 就是对外只读
     private val _uiState = MutableStateFlow(UiState(
         items = emptyList(),
         manualMode = false,
