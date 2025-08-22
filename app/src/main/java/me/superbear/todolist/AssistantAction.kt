@@ -7,4 +7,8 @@ sealed class AssistantAction {
         val dueAtIso: String? = null,
         val priority: String? = null
     ) : AssistantAction()
+
+    data class DeleteTask(
+        val id: Long
+    ) : AssistantAction()
 }

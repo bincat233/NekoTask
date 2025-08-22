@@ -59,15 +59,43 @@ class RealAssistantClient : AssistantClient {
 
         val systemInstruction = OpenAIChatMessage(
             role = "system",
-            content = "You are a helpful assistant that helps people manage their to-do lists. " +
-                    "You must respond with a SINGLE compact JSON object. " +
-                    "The JSON object must have two keys: 'say' and 'actions'. " +
-                    "The 'say' value is a string that you want to say to the user. " +
-                    "The 'actions' value is an array of actions to take. " +
-                    "Valid actions are: " +
-                    "{\"type\":\"add_task\",\"title\":\"string\",\"notes\":\"string?\",\"dueAt\":\"ISO-8601?\",\"priority\":\"LOW|MEDIUM|HIGH|?\"}. " +
-                    "If there are no actions, return an an empty array. " +
-                    "Do not include any extra prose or code fences in your response."
+            content = """You are a helpful assistant for a to-do list app. You MUST reply with ONE compact JSON object ONLY (no code fences, no extra prose). Use this schema:
+
+{
+  "say": "string",
+  "actions": [
+    { "type": "add_task", "title": "string", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?" },
+    { "type": "complete_task", "id": 123 },
+    { "type": "delete_task", "id": 123 },
+    { "type": "update_task", "id": 123, "title": "string?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?" }
+  ]
+}
+
+Rules:
+- You will also receive CURRENT_TODO_STATE as a system message. It contains:
+  { "now": "...", "unfinished": [ {"id":1, "title":"...", "priority":"..."}, ... ], "finished_count": N }.
+- When the user wants to mark an existing item done → return { "type": "complete_task", "id": <the matching unfinished task id> }.
+- When the user wants to delete/remove/stop an existing item → return { "type": "delete_task", "id": <the matching unfinished task id> }.
+- ALWAYS reference existing items by their "id" from CURRENT_TODO_STATE.unfinished. Do NOT invent ids. Use case-insensitive fuzzy title matching.
+- If no clear match is found or there are multiple matches, ask a clarifying question in "say" and return "actions": [].
+- Only use add_task for genuinely new items the user wants to create.
+- If no action is needed, return { "say": "...", "actions": [] }.
+
+Output:
+- Return EXACTLY one JSON object with the keys "say" and "actions". No markdown, no backticks, no extra keys.
+
+Examples:
+
+User: "I don’t want to chase the red dot anymore — delete it"
+CURRENT_TODO_STATE.unfinished contains {"id":1, "title":"Chase the red dot"}
+→ {"say":"Deleted 'Chase the red dot'.","actions":[{"type":"delete_task","id":1}]}
+
+User: "I asked for treats; mark it down"
+CURRENT_TODO_STATE.unfinished contains {"id":4, "title":"Ask for treats"}
+→ {"say":"Marked 'Ask for treats' as done.","actions":[{"type":"complete_task","id":4}]}
+
+Ambiguous:
+→ {"say":"I found two similar items. Which one do you mean?","actions":[]}"""
         )
 
         val stateMessage = stateProvider?.invoke()?.let { snapshot ->

@@ -181,6 +181,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                                 it.copy(items = listOf(newTask) + it.items)
                                             }
                                         }
+                                        is AssistantAction.DeleteTask -> {
+                                            val beforeCount = _uiState.value.items.size
+                                            _uiState.update { state ->
+                                                state.copy(items = state.items.filterNot { it.id == action.id })
+                                            }
+                                            val afterCount = _uiState.value.items.size
+                                            if (beforeCount > afterCount) {
+                                                Log.d("MainViewModel", "Deleted task with id ${action.id}")
+                                            } else {
+                                                Log.w("MainViewModel", "Could not find task with id ${action.id} to delete")
+                                            }
+                                        }
                                     }
                                 }
                                 Log.d("MainViewModel", "Executed ${envelope.actions.size} actions")

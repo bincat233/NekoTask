@@ -25,7 +25,8 @@ class AssistantActionParser {
     @Serializable
     private data class ActionDto(
         val type: String,
-        val title: String,
+        val id: Long? = null,
+        val title: String? = null,
         val notes: String? = null,
         @SerialName("dueAt")
         val dueAtIso: String? = null,
@@ -85,13 +86,16 @@ class AssistantActionParser {
 
     private fun mapAction(dto: ActionDto): AssistantAction? {
         return when (dto.type.lowercase()) {
-            "add_task" -> dto.title.trim().takeIf { it.isNotEmpty() }?.let { t ->
+            "add_task" -> dto.title?.trim()?.takeIf { it.isNotEmpty() }?.let { t ->
                 AssistantAction.AddTask(
                     title = t,
                     notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
                     dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
                     priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() }
                 )
+            }
+            "delete_task" -> dto.id?.let { id ->
+                AssistantAction.DeleteTask(id = id)
             }
             else -> null
         }
