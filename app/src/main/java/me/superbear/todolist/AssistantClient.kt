@@ -13,6 +13,20 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.random.Random
 
+/**
+ * Interface for a client that can send messages to an assistant and receive responses.
+ *
+ * To use the real assistant, you need to provide an OpenAI API key.
+ * 1. Create a file named `local.properties` in the root of your project.
+ * 2. Add the following line to `local.properties`:
+ *    `OPENAI_API_KEY="YOUR_API_KEY"`
+ *    Replace `YOUR_API_KEY` with your actual OpenAI API key.
+ *
+ * The assistant mode can be switched between mock and real at runtime.
+ * By default, the app uses the mock assistant. To use the real assistant, you can either:
+ * - Set the `USE_MOCK_ASSISTANT` build flag to `false`.
+ * - Call `setUseMockAssistant(false)` on the `MainViewModel`.
+ */
 interface AssistantClient {
     suspend fun send(userText: String, history: List<ChatMessage>): Result<String>
 }

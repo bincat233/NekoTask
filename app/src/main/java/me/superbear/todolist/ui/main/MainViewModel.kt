@@ -41,7 +41,7 @@ sealed class UiEvent {
     data class ManualAddSubmit(val title: String, val description: String?) : UiEvent()
     data class SendChat(val message: String) : UiEvent()
     data class FabMeasured(val widthDp: Dp) : UiEvent()
-    object ToggleAssistant : UiEvent()
+    data class SetUseMockAssistant(val useMock: Boolean) : UiEvent()
 }
 
 
@@ -63,6 +63,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ))
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    fun setUseMockAssistant(useMock: Boolean) {
+        onEvent(UiEvent.SetUseMockAssistant(useMock))
+    }
+    
     init {
         loadTasks()
     }
@@ -148,8 +152,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             is UiEvent.FabMeasured -> _uiState.update { it.copy(fabWidthDp = event.widthDp) }
-            is UiEvent.ToggleAssistant -> _uiState.update {
-                it.copy(useMockAssistant = !it.useMockAssistant)
+            is UiEvent.SetUseMockAssistant -> _uiState.update {
+                it.copy(useMockAssistant = event.useMock)
             }
         }
     }
