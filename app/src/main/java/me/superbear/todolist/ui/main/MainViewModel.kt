@@ -34,7 +34,7 @@ sealed class UiEvent {
     object CloseManual : UiEvent()
     data class ChangeTitle(val value: String) : UiEvent()
     data class ChangeDesc(val value: String) : UiEvent()
-    object SendManual : UiEvent()
+    data class ManualAddSubmit(val title: String, val description: String?) : UiEvent()
     data class SendChat(val message: String) : UiEvent()
     data class FabMeasured(val widthDp: Dp) : UiEvent()
 }
@@ -73,9 +73,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is UiEvent.CloseManual -> _uiState.update { it.copy(manualMode = false) }
             is UiEvent.ChangeTitle -> _uiState.update { it.copy(manualTitle = event.value) }
             is UiEvent.ChangeDesc -> _uiState.update { it.copy(manualDesc = event.value) }
-            is UiEvent.SendManual -> {
+            is UiEvent.ManualAddSubmit -> {
+                val newTask = Task(
+                    id = System.currentTimeMillis(),
+                    title = event.title,
+                    notes = event.description,
+                    createdAtIso = Clock.System.now().toString(),
+                    status = "OPEN"
+                )
                 _uiState.update {
                     it.copy(
+                        items = listOf(newTask) + it.items,
                         manualMode = false,
                         manualTitle = "",
                         manualDesc = ""

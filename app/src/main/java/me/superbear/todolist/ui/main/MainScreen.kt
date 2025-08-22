@@ -161,7 +161,7 @@ fun MainScreen(
                 onTitleChange = { onEvent(UiEvent.ChangeTitle(it)) },
                 description = state.manualDesc,
                 onDescriptionChange = { onEvent(UiEvent.ChangeDesc(it)) },
-                onSend = { onEvent(UiEvent.SendManual) },
+                onSend = { onEvent(UiEvent.ManualAddSubmit(state.manualTitle, state.manualDesc)) },
                 onCancel = { onEvent(UiEvent.CloseManual) },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
