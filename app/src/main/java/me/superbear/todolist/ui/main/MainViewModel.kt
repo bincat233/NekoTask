@@ -5,18 +5,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import me.superbear.todolist.AssistantClient
 import me.superbear.todolist.ChatMessage
+import me.superbear.todolist.MockAssistantClient
 import me.superbear.todolist.Sender
 import me.superbear.todolist.Task
 import me.superbear.todolist.TodoRepository
-import kotlin.random.Random
 
 data class UiState(
     val items: List<Task>,
@@ -43,6 +43,7 @@ sealed class UiEvent {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val todoRepository = TodoRepository(application)
+    private val assistantClient: AssistantClient = MockAssistantClient()
 
     private val _uiState = MutableStateFlow(UiState(
         items = emptyList(),
@@ -101,14 +102,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 viewModelScope.launch {
-                    delay(Random.nextLong(1000, 5000))
-                    val assistantMessage = ChatMessage(
-                        text = event.message,
-                        sender = Sender.Assistant,
-                        timestamp = Clock.System.now()
-                    )
-                    _uiState.update {
-                        it.copy(messages = it.messages + assistantMessage)
+                    val result = assistantClient.send(event.message, uiState.value.messages)
+                    result.onSuccess { assistantResponse ->
+                        val assistantMessage = ChatMessage(
+                            text = assistantResponse,
+                            sender = Sender.Assistant,
+                            timestamp = Clock.System.now()
+                        )
+                        _uiState.update {
+                            it.copy(messages = it.messages + assistantMessage)
+                        }
+                    }.onFailure {
+                        val errorMessage = ChatMessage(
+                            text = "Failed to get a response.",
+                            sender = Sender.Assistant,
+                            timestamp = Clock.System.now()
+                        )
+                        _uiState.update {
+                            it.copy(messages = it.messages + errorMessage)
+                        }
                     }
                 }
             }
