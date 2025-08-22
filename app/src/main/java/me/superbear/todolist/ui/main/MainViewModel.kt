@@ -165,10 +165,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             } else {
                                 if (actions.isNotEmpty()) {
                                     Log.d("MainViewModel", "Parsed ${actions.size} actions: $actions")
-                                }
+                                 }
                             }
                         }
                     }.onFailure {
+                        Log.e("MainViewModel", "Error sending message", it)
                         val finalAssistantMessage = assistantMessage.copy(
                             text = "[Error: unable to fetch response]",
                             status = MessageStatus.Failed

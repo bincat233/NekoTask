@@ -44,7 +44,7 @@ android {
         }
         debug {
             buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY")}\"")
-            buildConfigField("boolean", "USE_MOCK_ASSISTANT", "true")
+            buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
         }
     }
     compileOptions {
