@@ -15,6 +15,7 @@ import kotlinx.datetime.Clock
 import me.superbear.todolist.AssistantAction
 import me.superbear.todolist.AssistantActionParser
 import me.superbear.todolist.AssistantClient
+import me.superbear.todolist.AssistantEnvelope
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ChatMessage
 import me.superbear.todolist.MessageStatus
@@ -132,19 +133,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val result = assistantClient.send(event.message, uiState.value.messages)
                     result.onSuccess { assistantResponse ->
-                        val envelopeResult = assistantActionParser.parseEnvelope(assistantResponse)
-                        envelopeResult.onSuccess { envelope ->
-                            val finalAssistantMessage = assistantMessage.copy(
-                                text = envelope.say ?: assistantResponse,
+                        val envelope = assistantActionParser.parseEnvelope(assistantResponse).getOrElse {
+                            AssistantEnvelope("(no text)", emptyList())
+                        }
+
+                        if (!envelope.say.isNullOrBlank()) {
+                            val newAssistantMessage = assistantMessage.copy(
+                                text = envelope.say,
                                 status = MessageStatus.Sent
                             )
                             _uiState.update { state ->
                                 val newMessages = state.messages.map { msg ->
-                                    if (msg.id == assistantMessage.id) finalAssistantMessage else msg
+                                    if (msg.id == assistantMessage.id) newAssistantMessage else msg
                                 }
                                 state.copy(messages = newMessages)
                             }
+                        } else {
+                            // If say is null, remove the placeholder message
+                            _uiState.update { state ->
+                                state.copy(messages = state.messages.filter { it.id != assistantMessage.id })
+                            }
+                        }
 
+                        if (envelope.actions.isNotEmpty()) {
                             if (uiState.value.executeAssistantActions) {
                                 envelope.actions.forEach { action ->
                                     when (action) {
@@ -163,9 +174,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                 }
                             } else {
-                                if (envelope.actions.isNotEmpty()) {
-                                    Log.d("MainViewModel", "Parsed ${envelope.actions.size} actions: ${envelope.actions}")
-                                 }
+                                Log.d("MainViewModel", "Parsed ${envelope.actions.size} actions: ${envelope.actions}")
                             }
                         }
                     }.onFailure {
