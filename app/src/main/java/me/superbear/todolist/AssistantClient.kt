@@ -22,9 +22,8 @@ interface AssistantClient {
 
 class MockAssistantClient : AssistantClient {
     private val responses = listOf(
-        "I can help with that. What is the task?",
-        "I've added it to your list.",
-        "Here are some tasks you can add: [{\"action\": \"AddTask\", \"title\": \"Buy milk\", \"notes\": \"Get 2% milk\"}]"
+        "{\"say\":\"I can help. What’s the task?\",\"actions\":[]}",
+        "{\"say\":\"Added to your list.\",\"actions\":[{\"type\":\"add_task\",\"title\":\"Buy milk\",\"notes\":\"2%\"}]}"
     )
 
     override suspend fun send(message: String, history: List<ChatMessage>): Result<String> {
@@ -54,10 +53,14 @@ class RealAssistantClient : AssistantClient {
         val systemMessage = OpenAIChatMessage(
             role = "system",
             content = "You are a helpful assistant that helps people manage their to-do lists. " +
-                    "You can add, remove, and update tasks. " +
-                    "When a user asks you to add a task, you should respond with a JSON object that contains the action to take. " +
-                    "For example, if the user says 'add a task to buy milk', you should respond with " +
-                    "'{\"action\": \"AddTask\", \"title\": \"Buy milk\", \"notes\": \"Get 2% milk\"}'"
+                    "You must respond with a SINGLE compact JSON object. " +
+                    "The JSON object must have two keys: 'say' and 'actions'. " +
+                    "The 'say' value is a string that you want to say to the user. " +
+                    "The 'actions' value is an array of actions to take. " +
+                    "Valid actions are: " +
+                    "{\"type\":\"add_task\",\"title\":\"string\",\"notes\":\"string?\",\"dueAt\":\"ISO-8601?\",\"priority\":\"LOW|MEDIUM|HIGH|?\"}. " +
+                    "If there are no actions, return an empty array. " +
+                    "Do not include any extra prose or code fences in your response."
         )
         val messages = (listOf(systemMessage) + history.map {
             OpenAIChatMessage(
@@ -77,7 +80,6 @@ class RealAssistantClient : AssistantClient {
                 setBody(request)
             }.body()
 
-            Log.d("RealAssistantClient", "OpenAI response: $response")
             val openAIResponse = json.decodeFromString<OpenAIResponse>(response)
             return Result.success(openAIResponse.choices.first().message.content)
         } catch (e: Exception) {
