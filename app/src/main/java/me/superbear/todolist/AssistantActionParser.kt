@@ -1,9 +1,13 @@
 package me.superbear.todolist
 
 import android.util.Log
+import kotlinx.datetime.Clock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class AssistantActionParser {
 
@@ -105,5 +109,31 @@ class AssistantActionParser {
                 null
             }
         }
+    }
+}
+
+object TaskStateSnapshotBuilder {
+    fun build(tasks: List<Task>, maxUnfinished: Int = 20): String {
+        val now = Clock.System.now().toString()
+        val unfinishedTasks = tasks.filter { it.status != "DONE" }
+        val finishedCount = tasks.size - unfinishedTasks.size
+
+        val unfinishedJson = buildJsonArray {
+            unfinishedTasks.take(maxUnfinished).forEach { task ->
+                add(buildJsonObject {
+                    put("id", task.id)
+                    put("title", task.title.take(100)) // Trim title
+                    task.dueAtIso?.let { put("dueAt", it) }
+                    task.priority?.let { put("priority", it) }
+                })
+            }
+        }
+
+        val root = buildJsonObject {
+            put("now", now)
+            put("unfinished", unfinishedJson)
+            put("finished_count", finishedCount)
+        }
+        return root.toString()
     }
 }
