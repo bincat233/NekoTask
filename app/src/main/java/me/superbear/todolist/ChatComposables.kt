@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -144,34 +145,44 @@ fun ChatInputBar(
                 .heightIn(min = dockSize),          // 垂直至少与头像等高
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("Tell AI what you want to do…") },
-                // 支持多行
-                minLines = 1,
-                maxLines = 6,                // 需要再高就调大
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
+            val sendBtnSize = 40.dp
+            val sendBtnInset = 6.dp
+            val reservedEnd = sendBtnSize + sendBtnInset * 2
+            Box(modifier = Modifier.weight(1f)) {
+                TextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("Tell AI what you want to do…") },
+                    // 支持多行
+                    minLines = 1,
+                    maxLines = 6,                // 需要再高就调大
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = reservedEnd),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
                 )
-            )
-
-            IconButton(
-                onClick = {
-                    if (text.isNotBlank()) {
-                        onSend(text)
-                        text = ""
-                    }
-                },
-                enabled = text.isNotBlank()
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send"
-                )
+                IconButton(
+                    onClick = {
+                        if (text.isNotBlank()) {
+                            onSend(text)
+                            text = ""
+                        }
+                    },
+                    enabled = text.isNotBlank(),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = -sendBtnInset, y = -sendBtnInset)
+                        .size(sendBtnSize)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send"
+                    )
+                }
             }
         }
     }
