@@ -13,3 +13,10 @@ class MockAssistantClient : AssistantClient {
         return Result.success(userText) // echo
     }
 }
+
+class RealAssistantClient : AssistantClient {
+    override suspend fun send(userText: String, history: List<ChatMessage>): Result<String> {
+        // TODO: Implement the real assistant client
+        return Result.success("This is the real assistant.")
+    }
+}

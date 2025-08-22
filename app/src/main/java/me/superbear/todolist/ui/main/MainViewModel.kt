@@ -14,6 +14,7 @@ import kotlinx.datetime.Clock
 import me.superbear.todolist.AssistantClient
 import me.superbear.todolist.ChatMessage
 import me.superbear.todolist.MockAssistantClient
+import me.superbear.todolist.RealAssistantClient
 import me.superbear.todolist.Sender
 import me.superbear.todolist.Task
 import me.superbear.todolist.TodoRepository
@@ -25,7 +26,8 @@ data class UiState(
     val manualDesc: String,
     val messages: List<ChatMessage>,
     val fabWidthDp: Dp,
-    val imeVisible: Boolean
+    val imeVisible: Boolean,
+    val useMockAssistant: Boolean = true
 )
 
 sealed class UiEvent {
@@ -37,13 +39,15 @@ sealed class UiEvent {
     data class ManualAddSubmit(val title: String, val description: String?) : UiEvent()
     data class SendChat(val message: String) : UiEvent()
     data class FabMeasured(val widthDp: Dp) : UiEvent()
+    object ToggleAssistant : UiEvent()
 }
 
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val todoRepository = TodoRepository(application)
-    private val assistantClient: AssistantClient = MockAssistantClient()
+    private val mockAssistantClient: AssistantClient = MockAssistantClient()
+    private val realAssistantClient: AssistantClient = RealAssistantClient()
 
     private val _uiState = MutableStateFlow(UiState(
         items = emptyList(),
@@ -102,6 +106,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 viewModelScope.launch {
+                    val assistantClient = if (uiState.value.useMockAssistant) {
+                        mockAssistantClient
+                    } else {
+                        realAssistantClient
+                    }
                     val result = assistantClient.send(event.message, uiState.value.messages)
                     result.onSuccess { assistantResponse ->
                         val assistantMessage = ChatMessage(
@@ -125,6 +134,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             is UiEvent.FabMeasured -> _uiState.update { it.copy(fabWidthDp = event.widthDp) }
+            is UiEvent.ToggleAssistant -> _uiState.update {
+                it.copy(useMockAssistant = !it.useMockAssistant)
+            }
         }
     }
 
