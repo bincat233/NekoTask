@@ -39,7 +39,7 @@ class AssistantActionParser {
         explicitNulls = false
     }
 
-    private val fencedRegex = Regex("""```(json|JSON)?\s*([\sS]*?)\s*```""", RegexOption.MULTILINE)
+    private val fencedRegex = Regex("""´´´(json|JSON)?\s*([\s\S]*?)\s*´´´""", RegexOption.MULTILINE)
 
     fun parseEnvelope(text: String): Result<AssistantEnvelope> {
         Log.d("AssistantActionParser", "Received data: $text")
@@ -96,6 +96,15 @@ class AssistantActionParser {
             }
             "delete_task" -> dto.id?.let { id ->
                 AssistantAction.DeleteTask(id = id)
+            }
+            "update_task" -> dto.id?.let { id ->
+                AssistantAction.UpdateTask(
+                    id = id,
+                    title = dto.title?.trim().takeIf { !it.isNullOrEmpty() },
+                    notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
+                    dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
+                    priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() }
+                )
             }
             else -> null
         }

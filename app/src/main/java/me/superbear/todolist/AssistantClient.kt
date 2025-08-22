@@ -40,6 +40,7 @@ class RealAssistantClient : AssistantClient {
 
     private val json = Json {
         ignoreUnknownKeys = true
+        prettyPrint = true
     }
 
     private val client = HttpClient {

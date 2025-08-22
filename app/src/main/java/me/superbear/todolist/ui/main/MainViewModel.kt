@@ -15,6 +15,8 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import me.superbear.todolist.AssistantAction
 import me.superbear.todolist.AssistantActionParser
 import me.superbear.todolist.AssistantClient
@@ -61,6 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val mockAssistantClient: AssistantClient = MockAssistantClient()
     private val realAssistantClient: AssistantClient = RealAssistantClient()
     private val assistantActionParser = AssistantActionParser()
+    private val json = Json { prettyPrint = true }
 
     private val _uiState = MutableStateFlow(UiState(
         items = emptyList(),
@@ -191,6 +194,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                                 Log.d("MainViewModel", "Deleted task with id ${action.id}")
                                             } else {
                                                 Log.w("MainViewModel", "Could not find task with id ${action.id} to delete")
+                                            }
+                                        }
+                                        is AssistantAction.UpdateTask -> {
+                                            val taskToUpdate = _uiState.value.items.find { it.id == action.id }
+                                            if (taskToUpdate != null) {
+                                                val updatedTask = taskToUpdate.copy(
+                                                    title = action.title ?: taskToUpdate.title,
+                                                    notes = action.notes ?: taskToUpdate.notes,
+                                                    dueAt = action.dueAtIso?.let { parseToInstant(it) } ?: taskToUpdate.dueAt,
+                                                    priority = action.priority?.let { mapPriority(it) } ?: taskToUpdate.priority
+                                                )
+                                                _uiState.update { state ->
+                                                    state.copy(items = state.items.map { if (it.id == action.id) updatedTask else it })
+                                                }
+                                                Log.d("MainViewModel", "Updated task with id ${action.id}. New data: ${json.encodeToString(updatedTask)}")
+                                            } else {
+                                                Log.w("MainViewModel", "Could not find task with id ${action.id} to update")
                                             }
                                         }
                                     }

@@ -1,11 +1,13 @@
 package me.superbear.todolist
 
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Serializable
 
 enum class Priority {
     LOW, MEDIUM, HIGH, DEFAULT
 }
 
+@Serializable
 data class Task(
     val id: Long,
     val title: String,
