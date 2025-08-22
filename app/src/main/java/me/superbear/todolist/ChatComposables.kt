@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -15,9 +14,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,19 +35,44 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import me.superbear.todolist.R
 
 @Composable
-fun SpeechBubble(text: String, modifier: Modifier = Modifier) {
+fun SpeechBubble(
+    text: String,
+    isUser: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val shape = if (isUser) {
+        RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 12.dp)
+    } else {
+        RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomEnd = 12.dp)
+    }
+
+    val color = if (isUser) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    val textColor = if (isUser) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        LocalContentColor.current
+    }
+
     Surface(
-        modifier = modifier.padding(start = 16.dp, bottom = 8.dp),
-        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomEnd = 12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier.padding(
+            start = if (isUser) 0.dp else 16.dp,
+            end = if (isUser) 16.dp else 0.dp
+        ),
+        shape = shape,
+        color = color,
         shadowElevation = 4.dp
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            color = textColor
         )
     }
 }
@@ -56,7 +80,7 @@ fun SpeechBubble(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun CatDock(
     modifier: Modifier = Modifier,
-    avatarResId: Int = R.drawable.ic_cat_dock,
+    avatarResId: Int,
     text: String = "Assistant",
     showText: Boolean = false,    // 控制显示形态
     size: Dp = 55.dp,             // Dock外圆或高度
@@ -133,7 +157,8 @@ fun ChatInputBar(
             text = "Assistant",
             showText = false,
             size = dockSize,
-            modifier = Modifier.align(Alignment.TopStart)
+            modifier = Modifier.align(Alignment.TopStart),
+            avatarResId = R.drawable.ic_cat_dock
         )
 
         // 输入区：底部对齐，给左侧头像让出空间；最小高度=头像尺寸

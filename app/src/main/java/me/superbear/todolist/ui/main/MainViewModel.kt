@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,7 @@ import me.superbear.todolist.ChatMessage
 import me.superbear.todolist.Sender
 import me.superbear.todolist.Task
 import me.superbear.todolist.TodoRepository
+import kotlin.random.Random
 
 data class UiState(
     val items: List<Task>,
@@ -81,13 +83,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             is UiEvent.SendChat -> {
-                val chatMessage = ChatMessage(
+                val userMessage = ChatMessage(
                     text = event.message,
                     sender = Sender.User,
                     timestamp = Clock.System.now()
                 )
                 _uiState.update {
-                    it.copy(messages = it.messages + chatMessage)
+                    it.copy(messages = it.messages + userMessage)
+                }
+
+                viewModelScope.launch {
+                    delay(Random.nextLong(1000, 5000))
+                    val assistantMessage = ChatMessage(
+                        text = event.message,
+                        sender = Sender.Assistant,
+                        timestamp = Clock.System.now()
+                    )
+                    _uiState.update {
+                        it.copy(messages = it.messages + assistantMessage)
+                    }
                 }
             }
             is UiEvent.FabMeasured -> _uiState.update { it.copy(fabWidthDp = event.widthDp) }

@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.superbear.todolist.ChatInputBar
+import me.superbear.todolist.Sender
 import me.superbear.todolist.SpeechBubble
 import me.superbear.todolist.Task
 
@@ -131,14 +132,26 @@ fun MainScreen(
                 label = ""
             )
 
-            SpeechBubble(
-                text = message.text,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(bottom = bottomPadding * (state.messages.size - index))
-                    .padding(end = avoidancePadding)
-                    .imePadding()
-            )
+            when (message.sender) {
+                Sender.Assistant -> SpeechBubble(
+                    text = message.text,
+                    isUser = false,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = bottomPadding * (state.messages.size - index))
+                        .padding(end = avoidancePadding)
+                        .imePadding()
+                )
+                Sender.User -> SpeechBubble(
+                    text = message.text,
+                    isUser = true,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = bottomPadding * (state.messages.size - index))
+                        .padding(end = avoidancePadding)
+                        .imePadding()
+                )
+            }
         }
 
         if (state.manualMode) {
