@@ -4,11 +4,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,10 +56,10 @@ fun SpeechBubble(text: String, modifier: Modifier = Modifier) {
 fun CatDock(
     modifier: Modifier = Modifier,
     avatarResId: Int = R.drawable.ic_cat_dock,
-    text: String = "Assistant",   // 永远保留
+    text: String = "Assistant",
     showText: Boolean = false,    // 控制显示形态
-    size: Dp = 40.dp,             // Dock外圆或高度
-    avatarScale: Float = 0.7f     // 内部头像相对比例
+    size: Dp = 55.dp,             // Dock外圆或高度
+    avatarScale: Float = 0.85f,     // 内部头像相对比例
 ) {
     if (showText) {
         // 胶囊 Dock：头像 + 文本
@@ -114,35 +119,60 @@ fun ChatInputBar(
 ) {
     var text by remember { mutableStateOf("") }
 
-    Row(
-        modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val dockSize = 55.dp
+    val dockGap = 8.dp
+
+    Box(
+        modifier = modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .fillMaxWidth()
     ) {
-        CatDock(text = "Assistant", showText = false, modifier = Modifier.padding(end = 8.dp))
-        TextField(
-            value = text,
-            onValueChange = { text = it },
-            placeholder = { Text("Tell AI what you want to do…") },
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(24.dp),
-            colors = TextFieldDefaults.colors(
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
-            )
+        // 头像：左上对齐
+        CatDock(
+            text = "Assistant",
+            showText = false,
+            size = dockSize,
+            modifier = Modifier.align(Alignment.TopStart)
         )
-        IconButton(
-            onClick = {
-                if (text.isNotBlank()) {
-                    onSend(text)
-                    text = ""
-                }
-            },
-            enabled = text.isNotBlank()
+
+        // 输入区：底部对齐，给左侧头像让出空间；最小高度=头像尺寸
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(start = dockSize + dockGap) // 水平让位给头像
+                .heightIn(min = dockSize),          // 垂直至少与头像等高
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Filled.Send,
-                contentDescription = "Send"
+            TextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("Tell AI what you want to do…") },
+                // 支持多行
+                minLines = 1,
+                maxLines = 6,                // 需要再高就调大
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(24.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                )
             )
+
+            IconButton(
+                onClick = {
+                    if (text.isNotBlank()) {
+                        onSend(text)
+                        text = ""
+                    }
+                },
+                enabled = text.isNotBlank()
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "Send"
+                )
+            }
         }
     }
 }
