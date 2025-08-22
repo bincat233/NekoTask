@@ -1,23 +1,23 @@
 # 🐾 NekoTask
 
-NekoTask is a playful yet practical **to-do list app with an AI-powered assistant** 🐱.  
+NekoTask is a playful yet practical **to-do list app with an AI-powered assistant** 🐱.
 It was originally designed to support **people with ADHD** (adults or children, any age) by reducing **cognitive load** in task management — but of course, everyone can use it to stay organized.
 
-⚠️ **Important Note**:  
-At this stage, **NekoTask is a UI prototype only**.  
-- There is **no database integration yet** (tasks are stored in memory only).  
-- The **AI chat logic is not implemented** — only the chat interface exists.  
-- The project currently serves as a **design demo** and foundation for future development.  
+⚠️ **Important Note**:
+At this stage, **NekoTask is a functional prototype**.
+- Tasks are loaded from a local JSON file (`app/src/main/assets/todolist_items.json`).
+- The AI chat logic is implemented, with both a mock and a real client.
+- The real client requires an OpenAI API key to function.
 
 ---
 
-## ✨ Features (UI Demo Only)
+## ✨ Features
 - **Dual Interaction Modes**
   - 📝 **Manual Mode**: Add tasks via a clean, minimal bottom card.
-  - 🤖 **AI Chat Mode**: Chatbox and speech bubbles already implemented in UI.
+  - 🤖 **AI Chat Mode**: A functional chat interface to add, update, and delete tasks using natural language.
 - **ADHD-Friendly UI Principles**
   - Minimal, distraction-free interface.
-  - Reduced decision fatigue — AI agent planned to simplify task entry.
+  - Reduced decision fatigue — AI agent simplifies task entry.
   - Playful cat theme for motivation.
 
 ## 📸 Screenshots
@@ -27,7 +27,8 @@ At this stage, **NekoTask is a UI prototype only**.
 - **Android (Jetpack Compose)**
 - **Kotlin**
 - **Material 3 design**
-- (Planned) **OpenAI GPT API** integration
+- **Ktor** for networking
+- **OpenAI GPT API** integration
 
 ## 🔑 Setup
 To use the AI features, you will need to provide your own OpenAI API key.
@@ -40,31 +41,30 @@ To use the AI features, you will need to provide your own OpenAI API key.
 3.  **Make sure `local.properties` is in your `.gitignore` file** to prevent your API key from being committed to version control.
 
 ## 🚧 Current Status
-- ✅ UI for task lists, AI chat bubbles, and manual add card.  
-- ✅ Sample cat-themed task data for testing.  
-- ❌ No persistence layer (no database).  
-- ❌ No AI backend (chat logic not functional).  
+- ✅ UI for task lists, AI chat bubbles, and manual add card.
+- ✅ Sample cat-themed task data for testing.
+- ✅ Tasks loaded from a local JSON file.
+- ✅ AI backend integration with mock and real clients.
+- ❌ No persistence layer (no database).
 
 ---
 
 ## 🎯 Why NekoTask?
-Many productivity tools are **overwhelming** — too many buttons, features, and settings.  
-For users with ADHD, this can create friction instead of support.  
+Many productivity tools are **overwhelming** — too many buttons, features, and settings.
+For users with ADHD, this can create friction instead of support.
 
 NekoTask’s goal is to:
-- Keep **manual controls minimal**.  
-- Provide **AI-assisted task management** (planned).  
-- Build a **friendly, motivating environment** with playful design.  
+- Keep **manual controls minimal**.
+- Provide **AI-assisted task management**.
+- Build a **friendly, motivating environment** with playful design.
 
 ---
 
 ## 💡 Roadmap
-- [ ] Task persistence with local database.  
-- [ ] AI integration for natural language task creation.  
-- [ ] Accessibility improvements.  
-- [ ] Gamified streaks/rewards system.  
+- [ ] Task persistence with local database.
+- [ ] Accessibility improvements.
+- [ ] Gamified streaks/rewards system.
 
 ---
 
-> 🎓 *This project is currently developed as part of a Master's dissertation.  
-The present build is **a UI-only prototype**, serving as a design showcase and foundation for later AI-assisted functionality.*
+> 🎓 *This project is currently developed as part of a Master's dissertation.*
