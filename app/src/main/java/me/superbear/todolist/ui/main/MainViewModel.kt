@@ -23,6 +23,7 @@ import me.superbear.todolist.MockAssistantClient
 import me.superbear.todolist.RealAssistantClient
 import me.superbear.todolist.Sender
 import me.superbear.todolist.Task
+import me.superbear.todolist.TaskStateSnapshotBuilder
 import me.superbear.todolist.TodoRepository
 
 data class UiState(
@@ -75,6 +76,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     init {
         loadTasks()
+        (realAssistantClient as? RealAssistantClient)?.stateProvider = {
+            TaskStateSnapshotBuilder.build(uiState.value.items)
+        }
     }
 
     private fun loadTasks() {
@@ -84,18 +88,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun onEvent(event: UiEvent) {
-        when (event) {
-            is UiEvent.ToggleTask -> toggleTask(event.task)
+    fun onEvent(UiEvent: UiEvent) {
+        when (UiEvent) {
+            is UiEvent.ToggleTask -> toggleTask(UiEvent.task)
             is UiEvent.OpenManual -> _uiState.update { it.copy(manualMode = true) }
             is UiEvent.CloseManual -> _uiState.update { it.copy(manualMode = false) }
-            is UiEvent.ChangeTitle -> _uiState.update { it.copy(manualTitle = event.value) }
-            is UiEvent.ChangeDesc -> _uiState.update { it.copy(manualDesc = event.value) }
+            is UiEvent.ChangeTitle -> _uiState.update { it.copy(manualTitle = UiEvent.value) }
+            is UiEvent.ChangeDesc -> _uiState.update { it.copy(manualDesc = UiEvent.value) }
             is UiEvent.ManualAddSubmit -> {
                 val newTask = Task(
                     id = System.currentTimeMillis(),
-                    title = event.title,
-                    notes = event.description,
+                    title = UiEvent.title,
+                    notes = UiEvent.description,
                     createdAtIso = Clock.System.now().toString(),
                     status = "OPEN"
                 )
@@ -110,7 +114,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             is UiEvent.SendChat -> {
                 val userMessage = ChatMessage(
-                    text = event.message,
+                    text = UiEvent.message,
                     sender = Sender.User,
                     timestamp = Clock.System.now(),
                     status = MessageStatus.Sent
@@ -131,7 +135,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         realAssistantClient
                     }
-                    val result = assistantClient.send(event.message, uiState.value.messages)
+                    val result = assistantClient.send(UiEvent.message, uiState.value.messages)
                     result.onSuccess { assistantResponse ->
                         val envelope = assistantActionParser.parseEnvelope(assistantResponse).getOrElse {
                             AssistantEnvelope("(no text)", emptyList())
@@ -192,9 +196,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-            is UiEvent.FabMeasured -> _uiState.update { it.copy(fabWidthDp = event.widthDp) }
+            is UiEvent.FabMeasured -> _uiState.update { it.copy(fabWidthDp = UiEvent.widthDp) }
             is UiEvent.SetUseMockAssistant -> _uiState.update {
-                it.copy(useMockAssistant = event.useMock)
+                it.copy(useMockAssistant = UiEvent.useMock)
             }
         }
     }

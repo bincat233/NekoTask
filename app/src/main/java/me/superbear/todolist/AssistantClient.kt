@@ -1,8 +1,11 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package me.superbear.todolist
 
 import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -11,8 +14,9 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.delay
-import kotlinx.serialization.SerialName
+import kotlinx.serialization.MissingFieldException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.random.Random
 
@@ -46,11 +50,14 @@ class RealAssistantClient : AssistantClient {
 
     private val apiKey: String = BuildConfig.OPENAI_API_KEY
 
+    var stateProvider: (() -> String)? = null
+
     override suspend fun send(message: String, history: List<ChatMessage>): Result<String> {
         if (apiKey.isBlank()) {
             return Result.failure(Exception("OpenAI API key is missing. Please add it to your local.properties file."))
         }
-        val systemMessage = OpenAIChatMessage(
+
+        val systemInstruction = OpenAIChatMessage(
             role = "system",
             content = "You are a helpful assistant that helps people manage their to-do lists. " +
                     "You must respond with a SINGLE compact JSON object. " +
@@ -59,32 +66,52 @@ class RealAssistantClient : AssistantClient {
                     "The 'actions' value is an array of actions to take. " +
                     "Valid actions are: " +
                     "{\"type\":\"add_task\",\"title\":\"string\",\"notes\":\"string?\",\"dueAt\":\"ISO-8601?\",\"priority\":\"LOW|MEDIUM|HIGH|?\"}. " +
-                    "If there are no actions, return an empty array. " +
+                    "If there are no actions, return an an empty array. " +
                     "Do not include any extra prose or code fences in your response."
         )
-        val messages = (listOf(systemMessage) + history.map {
+
+        val stateMessage = stateProvider?.invoke()?.let { snapshot ->
+            OpenAIChatMessage(role = "system", content = "CURRENT_TODO_STATE: $snapshot")
+        }
+
+        val messages = mutableListOf<OpenAIChatMessage>()
+        messages.add(systemInstruction)
+        stateMessage?.let { messages.add(it) }
+        messages.addAll(history.map {
             OpenAIChatMessage(
                 role = it.sender.name.lowercase(),
                 content = it.text
             )
-        }).takeLast(10)
+        })
 
         val request = OpenAIRequest(
             model = "gpt-5-mini",
-            messages = messages
+            messages = messages.takeLast(10) // Ensure we don't exceed token limits
         )
+        lateinit var response: String
         try {
-            val response: String = client.post("https://api.openai.com/v1/chat/completions") {
+            Log.d("RealAssistantClient", "Request: ${json.encodeToString(request)}")
+            response = client.post("https://api.openai.com/v1/chat/completions") {
                 header("Authorization", "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(request)
             }.body()
 
+            Log.d("RealAssistantClient", "Response: $response")
+
             val openAIResponse = json.decodeFromString<OpenAIResponse>(response)
             return Result.success(openAIResponse.choices.first().message.content)
+        } catch (e: HttpRequestTimeoutException) {
+            return Result.failure(Exception("Request timed out. Please check your internet connection and try again."))
+        } catch (e: MissingFieldException) {
+            return try {
+                val errorResponse = json.decodeFromString<OpenAIErrorResponse>(response)
+                Result.failure(Exception("API Error: ${errorResponse.error.message}"))
+            } catch (_: Exception) {
+                Result.failure(Exception("Failed to parse API response: ${e.message}"))
+            }
         } catch (e: Exception) {
-            Log.e("MainViewModel", "Error sending message", e)
-            return Result.failure(e)
+            return Result.failure(Exception("An unexpected error occurred: ${e.message}"))
         }
     }
 }
@@ -109,4 +136,14 @@ data class OpenAIChoice(
 data class OpenAIChatMessage(
     val role: String,
     val content: String
+)
+
+@Serializable
+data class OpenAIErrorResponse(
+    val error: OpenAIError
+)
+
+@Serializable
+data class OpenAIError(
+    val message: String
 )
