@@ -1,6 +1,7 @@
 package me.superbear.todolist.ui.main
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -11,6 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import me.superbear.todolist.AssistantAction
+import me.superbear.todolist.AssistantActionParser
 import me.superbear.todolist.AssistantClient
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ChatMessage
@@ -29,7 +32,8 @@ data class UiState(
     val messages: List<ChatMessage>,
     val fabWidthDp: Dp,
     val imeVisible: Boolean,
-    val useMockAssistant: Boolean = true
+    val useMockAssistant: Boolean = true,
+    val executeAssistantActions: Boolean = false
 )
 
 sealed class UiEvent {
@@ -50,6 +54,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val todoRepository = TodoRepository(application)
     private val mockAssistantClient: AssistantClient = MockAssistantClient()
     private val realAssistantClient: AssistantClient = RealAssistantClient()
+    private val assistantActionParser = AssistantActionParser()
 
     private val _uiState = MutableStateFlow(UiState(
         items = emptyList(),
@@ -136,6 +141,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 if (msg.id == assistantMessage.id) finalAssistantMessage else msg
                             }
                             it.copy(messages = newMessages)
+                        }
+
+                        val actionsResult = assistantActionParser.parse(assistantResponse)
+                        actionsResult.onSuccess { actions ->
+                            if (uiState.value.executeAssistantActions) {
+                                actions.forEach { action ->
+                                    when (action) {
+                                        is AssistantAction.AddTask -> {
+                                            val newTask = Task(
+                                                id = System.currentTimeMillis(),
+                                                title = action.title,
+                                                notes = action.notes,
+                                                createdAtIso = Clock.System.now().toString(),
+                                                status = "OPEN"
+                                            )
+                                            _uiState.update {
+                                                it.copy(items = listOf(newTask) + it.items)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                if (actions.isNotEmpty()) {
+                                    Log.d("MainViewModel", "Parsed ${actions.size} actions: $actions")
+                                }
+                            }
                         }
                     }.onFailure {
                         val finalAssistantMessage = assistantMessage.copy(
