@@ -2,6 +2,7 @@ package me.superbear.todolist
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.superbear.todolist.R
 
@@ -49,27 +51,30 @@ fun SpeechBubble(text: String, modifier: Modifier = Modifier) {
 fun CatDock(
     modifier: Modifier = Modifier,
     avatarResId: Int = R.drawable.ic_cat_dock,
-    text: String = "Assistant",
-    showText: Boolean = true
+    text: String = "Assistant",   // 永远保留
+    showText: Boolean = false,    // 控制显示形态
+    size: Dp = 40.dp,             // Dock外圆或高度
+    avatarScale: Float = 0.7f     // 内部头像相对比例
 ) {
-    Surface(
-        modifier = modifier,
-        shape = if (showText) RoundedCornerShape(50) else CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+    if (showText) {
+        // 胶囊 Dock：头像 + 文本
+        Surface(
+            modifier = modifier,
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
-            Image(
-                painter = painterResource(id = avatarResId),
-                contentDescription = "Assistant Avatar",
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-            )
-            if (showText) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(id = avatarResId),
+                    contentDescription = "Assistant Avatar",
+                    modifier = Modifier
+                        .size(size * avatarScale)
+                        .clip(CircleShape)
+                )
                 Text(
                     text = text,
                     style = MaterialTheme.typography.bodyMedium,
@@ -77,6 +82,25 @@ fun CatDock(
                     modifier = Modifier.padding(start = 8.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    } else {
+        // 圆形 Dock：只有头像
+        val avatarSize = size * avatarScale
+        Surface(
+            modifier = modifier.size(size),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Image(
+                    painter = painterResource(id = avatarResId),
+                    contentDescription = "Assistant Avatar",
+                    modifier = Modifier
+                        .size(avatarSize)
+                        .clip(CircleShape)
                 )
             }
         }
@@ -94,7 +118,7 @@ fun ChatInputBar(
         modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        CatDock(text = "Assistant", showText = true, modifier = Modifier.padding(end = 8.dp))
+        CatDock(text = "Assistant", showText = false, modifier = Modifier.padding(end = 8.dp))
         TextField(
             value = text,
             onValueChange = { text = it },
