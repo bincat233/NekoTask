@@ -29,6 +29,16 @@ At this stage, **NekoTask is a UI prototype only**.
 - **Material 3 design**
 - (Planned) **OpenAI GPT API** integration
 
+## 🔑 Setup
+To use the AI features, you will need to provide your own OpenAI API key.
+
+1.  **Create a `local.properties` file** in the root directory of the project if you don't already have one.
+2.  **Add your OpenAI API key** to the `local.properties` file:
+    ```properties
+    openai_key="YOUR_API_KEY"
+    ```
+3.  **Make sure `local.properties` is in your `.gitignore` file** to prevent your API key from being committed to version control.
+
 ## 🚧 Current Status
 - ✅ UI for task lists, AI chat bubbles, and manual add card.  
 - ✅ Sample cat-themed task data for testing.  
@@ -58,4 +68,3 @@ NekoTask’s goal is to:
 
 > 🎓 *This project is currently developed as part of a Master's dissertation.  
 The present build is **a UI-only prototype**, serving as a design showcase and foundation for later AI-assisted functionality.*
-
