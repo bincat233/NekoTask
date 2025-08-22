@@ -148,40 +148,44 @@ fun ChatInputBar(
             val sendBtnSize = 40.dp
             val sendBtnInset = 6.dp
             val reservedEnd = sendBtnSize + sendBtnInset * 2
+
             Box(modifier = Modifier.weight(1f)) {
                 TextField(
                     value = text,
                     onValueChange = { text = it },
                     placeholder = { Text("Tell AI what you want to do…") },
-                    // 支持多行
                     minLines = 1,
-                    maxLines = 6,                // 需要再高就调大
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(end = reservedEnd),
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),       // ❌ 不再用 .padding(end = reservedEnd)
                     shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
-                    )
+                    ),
+                    // ✅ 用 trailingIcon 预留文字区域，避免被覆盖
+                    trailingIcon = { Spacer(Modifier.width(reservedEnd)) }
                 )
-                IconButton(
-                    onClick = {
-                        if (text.isNotBlank()) {
-                            onSend(text)
-                            text = ""
-                        }
-                    },
-                    enabled = text.isNotBlank(),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(x = -sendBtnInset, y = -sendBtnInset)
-                        .size(sendBtnSize)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send"
-                    )
+
+                // ✅ 覆盖层与 TextField 同尺寸的参考系
+                Box(Modifier.matchParentSize()) {
+                    IconButton(
+                        onClick = {
+                            if (text.isNotBlank()) {
+                                onSend(text)
+                                text = ""
+                            }
+                        },
+                        enabled = text.isNotBlank(),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)               // 右下角
+                            .padding(end = sendBtnInset, bottom = sendBtnInset)
+                            .size(sendBtnSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send"
+                        )
+                    }
                 }
             }
         }
