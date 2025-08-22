@@ -103,7 +103,7 @@ Rules:
         })
 
         val request = OpenAIRequest(
-            model = "gpt-4o-mini",
+            model = "gpt-5o-mini",
             messages = messages.takeLast(10) // Ensure we don't exceed token limits
         )
         lateinit var response: String

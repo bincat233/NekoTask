@@ -87,9 +87,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ))
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    fun setUseMockAssistant(useMock: Boolean) {
-        onEvent(UiEvent.SetUseMockAssistant(useMock))
-    }
+    //fun setUseMockAssistant(useMock: Boolean) {
+    //    onEvent(UiEvent.SetUseMockAssistant(useMock))
+    //}
     
     init {
         loadTasks()
@@ -105,149 +105,221 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun onEvent(UiEvent: UiEvent) {
-        when (UiEvent) {
-            is UiEvent.ToggleTask -> toggleTask(UiEvent.task)
-            is UiEvent.OpenManual -> _uiState.update { it.copy(manualMode = true) }
-            is UiEvent.CloseManual -> _uiState.update { it.copy(manualMode = false) }
-            is UiEvent.ChangeTitle -> _uiState.update { it.copy(manualTitle = UiEvent.value) }
-            is UiEvent.ChangeDesc -> _uiState.update { it.copy(manualDesc = UiEvent.value) }
-            is UiEvent.ManualAddSubmit -> {
+
+    fun onEvent(event: UiEvent) {
+        when (event) {
+            is UiEvent.ToggleTask -> toggleTask(event.task)
+            is UiEvent.OpenManual -> setManualMode(true)
+            is UiEvent.CloseManual -> setManualMode(false)
+            is UiEvent.ChangeTitle -> setManualTitle(event.value)
+            is UiEvent.ChangeDesc -> setManualDesc(event.value)
+            is UiEvent.ManualAddSubmit -> handleManualAddSubmit(event.title, event.description)
+            is UiEvent.SendChat -> handleSendChat(event.message)
+            is UiEvent.FabMeasured -> setFabWidth(event.widthDp)
+            is UiEvent.SetUseMockAssistant -> setUseMockAssistant(event.useMock)
+        }
+    }
+
+    // UI State Update Helpers
+    private fun setManualMode(enabled: Boolean) {
+        _uiState.update { it.copy(manualMode = enabled) }
+    }
+
+    private fun setManualTitle(title: String) {
+        _uiState.update { it.copy(manualTitle = title) }
+    }
+
+    private fun setManualDesc(desc: String) {
+        _uiState.update { it.copy(manualDesc = desc) }
+    }
+
+    private fun setFabWidth(widthDp: Dp) {
+        _uiState.update { it.copy(fabWidthDp = widthDp) }
+    }
+
+    private fun setUseMockAssistant(useMock: Boolean) {
+        _uiState.update { it.copy(useMockAssistant = useMock) }
+    }
+
+    // Task Management
+    private fun handleManualAddSubmit(title: String, description: String?) {
+        val newTask = Task(
+            id = System.currentTimeMillis(),
+            title = title,
+            notes = description,
+            createdAt = Clock.System.now(),
+            status = "OPEN"
+        )
+        addTask(newTask)
+        resetManualForm()
+    }
+
+    private fun addTask(task: Task) {
+        _uiState.update {
+            it.copy(items = listOf(task) + it.items)
+        }
+    }
+
+    private fun deleteTask(taskId: Long) {
+        val beforeCount = _uiState.value.items.size
+        _uiState.update { state ->
+            state.copy(items = state.items.filterNot { it.id == taskId })
+        }
+        val afterCount = _uiState.value.items.size
+        if (beforeCount > afterCount) {
+            Log.d("MainViewModel", "Deleted task with id $taskId")
+        } else {
+            Log.w("MainViewModel", "Could not find task with id $taskId to delete")
+        }
+    }
+
+    private fun updateTask(updatedTask: Task) {
+        _uiState.update { state ->
+            state.copy(items = state.items.map { if (it.id == updatedTask.id) updatedTask else it })
+        }
+        Log.d("MainViewModel", "Updated task with id ${updatedTask.id}. New data: ${json.encodeToString(updatedTask)}")
+    }
+
+    private fun resetManualForm() {
+        _uiState.update {
+            it.copy(
+                manualMode = false,
+                manualTitle = "",
+                manualDesc = ""
+            )
+        }
+    }
+
+    // Chat Message Management
+    private fun addMessages(vararg messages: ChatMessage) {
+        _uiState.update {
+            it.copy(messages = it.messages + messages)
+        }
+    }
+
+    private fun replaceMessage(oldMessageId: String, newMessage: ChatMessage) {
+        _uiState.update { state ->
+            val newMessages = state.messages.map { msg ->
+                if (msg.id == oldMessageId) newMessage else msg
+            }
+            state.copy(messages = newMessages)
+        }
+    }
+
+    private fun removeMessage(messageId: String) {
+        _uiState.update { state ->
+            state.copy(messages = state.messages.filter { it.id != messageId })
+        }
+    }
+
+    // Chat Handling
+    private fun handleSendChat(message: String) {
+        val userMessage = ChatMessage(
+            text = message,
+            sender = Sender.User,
+            timestamp = Clock.System.now(),
+            status = MessageStatus.Sent
+        )
+        val assistantMessage = ChatMessage(
+            sender = Sender.Assistant,
+            text = "...",
+            timestamp = Clock.System.now(),
+            status = MessageStatus.Sending
+        )
+        addMessages(userMessage, assistantMessage)
+
+        viewModelScope.launch {
+            sendToAssistant(message, assistantMessage)
+        }
+    }
+
+    private suspend fun sendToAssistant(message: String, placeholderMessage: ChatMessage) {
+        val assistantClient = if (uiState.value.useMockAssistant) {
+            mockAssistantClient
+        } else {
+            realAssistantClient
+        }
+        
+        val result = assistantClient.send(message, uiState.value.messages)
+        result.onSuccess { assistantResponse ->
+            handleAssistantResponse(assistantResponse, placeholderMessage)
+        }.onFailure { error ->
+            handleAssistantError(error, placeholderMessage)
+        }
+    }
+
+    private fun handleAssistantResponse(response: String, placeholderMessage: ChatMessage) {
+        val envelope = assistantActionParser.parseEnvelope(response).getOrElse {
+            AssistantEnvelope("(no text)", emptyList())
+        }
+
+        // Handle assistant's text response
+        if (!envelope.say.isNullOrBlank()) {
+            val newAssistantMessage = placeholderMessage.copy(
+                text = envelope.say,
+                status = MessageStatus.Sent
+            )
+            replaceMessage(placeholderMessage.id, newAssistantMessage)
+        } else {
+            removeMessage(placeholderMessage.id)
+        }
+
+        // Handle assistant's actions
+        if (envelope.actions.isNotEmpty()) {
+            if (uiState.value.executeAssistantActions) {
+                executeAssistantActions(envelope.actions)
+            } else {
+                Log.d("MainViewModel", "Parsed ${envelope.actions.size} actions: ${envelope.actions}")
+            }
+        }
+    }
+
+    private fun handleAssistantError(error: Throwable, placeholderMessage: ChatMessage) {
+        Log.e("MainViewModel", "Error sending message", error)
+        val errorMessage = placeholderMessage.copy(
+            text = "[Error: unable to fetch response]",
+            status = MessageStatus.Failed
+        )
+        replaceMessage(placeholderMessage.id, errorMessage)
+    }
+
+    private fun executeAssistantActions(actions: List<AssistantAction>) {
+        actions.forEach { action ->
+            executeAssistantAction(action)
+        }
+        Log.d("MainViewModel", "Executed ${actions.size} actions")
+    }
+
+    private fun executeAssistantAction(action: AssistantAction) {
+        when (action) {
+            is AssistantAction.AddTask -> {
                 val newTask = Task(
                     id = System.currentTimeMillis(),
-                    title = UiEvent.title,
-                    notes = UiEvent.description,
-                    createdAt = Clock.System.now(),
-                    status = "OPEN"
+                    title = action.title,
+                    notes = action.notes,
+                    dueAt = parseToInstant(action.dueAtIso),
+                    priority = mapPriority(action.priority),
+                    status = "OPEN",
+                    createdAt = Clock.System.now()
                 )
-                _uiState.update {
-                    it.copy(
-                        items = listOf(newTask) + it.items,
-                        manualMode = false,
-                        manualTitle = "",
-                        manualDesc = ""
+                addTask(newTask)
+            }
+            is AssistantAction.DeleteTask -> {
+                deleteTask(action.id)
+            }
+            is AssistantAction.UpdateTask -> {
+                val taskToUpdate = _uiState.value.items.find { it.id == action.id }
+                if (taskToUpdate != null) {
+                    val updatedTask = taskToUpdate.copy(
+                        title = action.title ?: taskToUpdate.title,
+                        notes = action.notes ?: taskToUpdate.notes,
+                        dueAt = action.dueAtIso?.let { parseToInstant(it) } ?: taskToUpdate.dueAt,
+                        priority = action.priority?.let { mapPriority(it) } ?: taskToUpdate.priority
                     )
+                    updateTask(updatedTask)
+                } else {
+                    Log.w("MainViewModel", "Could not find task with id ${action.id} to update")
                 }
-            }
-            is UiEvent.SendChat -> {
-                val userMessage = ChatMessage(
-                    text = UiEvent.message,
-                    sender = Sender.User,
-                    timestamp = Clock.System.now(),
-                    status = MessageStatus.Sent
-                )
-                val assistantMessage = ChatMessage(
-                    sender = Sender.Assistant,
-                    text = "...",
-                    timestamp = Clock.System.now(),
-                    status = MessageStatus.Sending
-                )
-                _uiState.update {
-                    it.copy(messages = it.messages + userMessage + assistantMessage)
-                }
-
-                viewModelScope.launch {
-                    val assistantClient = if (uiState.value.useMockAssistant) {
-                        mockAssistantClient
-                    } else {
-                        realAssistantClient
-                    }
-                    val result = assistantClient.send(UiEvent.message, uiState.value.messages)
-                    result.onSuccess { assistantResponse ->
-                        val envelope = assistantActionParser.parseEnvelope(assistantResponse).getOrElse {
-                            AssistantEnvelope("(no text)", emptyList())
-                        }
-
-                        if (!envelope.say.isNullOrBlank()) {
-                            val newAssistantMessage = assistantMessage.copy(
-                                text = envelope.say,
-                                status = MessageStatus.Sent
-                            )
-                            _uiState.update { state ->
-                                val newMessages = state.messages.map { msg ->
-                                    if (msg.id == assistantMessage.id) newAssistantMessage else msg
-                                 }
-                                state.copy(messages = newMessages)
-                            }
-                        } else {
-                            // If say is null, remove the placeholder message
-                            _uiState.update { state ->
-                                state.copy(messages = state.messages.filter { it.id != assistantMessage.id })
-                            }
-                        }
-
-                        if (envelope.actions.isNotEmpty()) {
-                            if (uiState.value.executeAssistantActions) {
-                                envelope.actions.forEach { action ->
-                                    when (action) {
-                                        is AssistantAction.AddTask -> {
-                                            val newTask = Task(
-                                                id = System.currentTimeMillis(),
-                                                title = action.title,
-                                                notes = action.notes,
-                                                dueAt = parseToInstant(action.dueAtIso),
-                                                priority = mapPriority(action.priority),
-                                                status = "OPEN",
-                                                createdAt = Clock.System.now()
-                                            )
-                                            _uiState.update {
-                                                it.copy(items = listOf(newTask) + it.items)
-                                            }
-                                        }
-                                        is AssistantAction.DeleteTask -> {
-                                            val beforeCount = _uiState.value.items.size
-                                            _uiState.update { state ->
-                                                state.copy(items = state.items.filterNot { it.id == action.id })
-                                            }
-                                            val afterCount = _uiState.value.items.size
-                                            if (beforeCount > afterCount) {
-                                                Log.d("MainViewModel", "Deleted task with id ${action.id}")
-                                            } else {
-                                                Log.w("MainViewModel", "Could not find task with id ${action.id} to delete")
-                                            }
-                                        }
-                                        is AssistantAction.UpdateTask -> {
-                                            val taskToUpdate = _uiState.value.items.find { it.id == action.id }
-                                            if (taskToUpdate != null) {
-                                                val updatedTask = taskToUpdate.copy(
-                                                    title = action.title ?: taskToUpdate.title,
-                                                    notes = action.notes ?: taskToUpdate.notes,
-                                                    dueAt = action.dueAtIso?.let { parseToInstant(it) } ?: taskToUpdate.dueAt,
-                                                    priority = action.priority?.let { mapPriority(it) } ?: taskToUpdate.priority
-                                                )
-                                                _uiState.update { state ->
-                                                    state.copy(items = state.items.map { if (it.id == action.id) updatedTask else it })
-                                                }
-                                                Log.d("MainViewModel", "Updated task with id ${action.id}. New data: ${json.encodeToString(updatedTask)}")
-                                            } else {
-                                                Log.w("MainViewModel", "Could not find task with id ${action.id} to update")
-                                            }
-                                        }
-                                    }
-                                }
-                                Log.d("MainViewModel", "Executed ${envelope.actions.size} actions")
-                            } else {
-                                Log.d("MainViewModel", "Parsed ${envelope.actions.size} actions: ${envelope.actions}")
-                            }
-                        }
-                    }.onFailure {
-                        Log.e("MainViewModel", "Error sending message", it)
-                        val finalAssistantMessage = assistantMessage.copy(
-                            text = "[Error: unable to fetch response]",
-                            status = MessageStatus.Failed
-                        )
-                        _uiState.update { state ->
-                            val newMessages = state.messages.map { msg ->
-                                if (msg.id == assistantMessage.id) finalAssistantMessage else msg
-                            }
-                            state.copy(messages = newMessages)
-                        }
-                    }
-                }
-            }
-            is UiEvent.FabMeasured -> _uiState.update { it.copy(fabWidthDp = UiEvent.widthDp) }
-            is UiEvent.SetUseMockAssistant -> _uiState.update {
-                it.copy(useMockAssistant = UiEvent.useMock)
             }
         }
     }
