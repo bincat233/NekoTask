@@ -28,6 +28,10 @@ At this stage, **NekoTask is a functional prototype**.
  - **Chat Overlay Modes**
    - Peek bubbles over the list, or switch to fullscreen chat.
    - Pin/auto-dismiss behavior to reduce noise.
+ - **AI Notepad (Working-Memory Notes)**
+   - Quick, lightweight notes for facts/clues/context that are not actionable tasks.
+   - Pin important notes; optionally link a note to a task; convert note → task when needed.
+   - Clean separation from the checklist to avoid clutter.
 
 ## 📸 Screenshots
 *(to be added — current UI demo with AI chat + manual add card)*
@@ -93,14 +97,22 @@ NekoTask’s goal is to:
    - Simple self-rating chip; drives “next small step” granularity and optional UI contraction (show only next actionable).
  - [ ] Privacy toggle for AI snapshot:
    - Off by default. When on, send a minimal, non-sensitive task snapshot in a system message.
+ - [ ] AI Notepad MVP (in-memory):
+   - New `Note` model and in-memory repository; CRUD + pin/unpin; optional link to `taskId`.
+   - Notepad UI (sheet or screen) and a small pinned preview strip on Home.
+   - Convert note → task (simple UI action); keep notes separate from the checklist.
+ - [ ] Chat + Notes integration:
+   - “remember …/记一下 …” maps to `add_note`; retrieval answers appear in `say`.
 
 ### Infrastructure
 - [ ] Local persistence with Room (entities/DAOs, v1 schema; replace JSON-only).
 - [ ] Compose Navigation + Task Details screen (edit title/notes/due/priority; manage subtasks).
+ - [ ] Room for notes (separate `notes` table) and repository abstraction.
 
 ### Assistant & Privacy
  - [ ] Privacy toggle: choose whether to send a current-task snapshot to the AI (with clear copy; default off).
  - [ ] Confirmation gates for destructive actions (bulk delete/complete) and guardrails around overdue bulk ops.
+ - [ ] Separate privacy toggle for notes snapshot (default off) with simple redaction.
 
 ### Reminders & Input
  - [ ] Gentle reminders with WorkManager (due and overdue notifications; rate limited, quiet hours friendly).
@@ -132,6 +144,20 @@ The real client sends a system prompt requiring the assistant to reply with a si
 
 Responses are parsed and mapped to app actions. Mock and real clients are both supported.
 
+Note actions (for working-memory notes) extend the same `actions` array without changing the envelope:
+
+```json
+{
+  "say": "string",
+  "actions": [
+    { "type": "add_note", "text": "string", "taskId": 123, "pinned": true },
+    { "type": "update_note", "id": 1, "text": "string", "pinned": false, "taskId": 123 },
+    { "type": "delete_note", "id": 1 },
+    { "type": "pin_note", "id": 1, "pinned": true }
+  ]
+}
+```
+
 ---
 
 ## 🔬 Research Notes (for the dissertation)
@@ -149,4 +175,4 @@ Responses are parsed and mapped to app actions. Mock and real clients are both s
 
 ---
 
-> 🎓 *This project is currently developed as part of a Master's dissertation —  But I've taken it personally because me also live with it. *
+> 🎓 *This project is currently developed as part of a Master's dissertation — and because I also live with ADHD and depression, I've taken it personally.*
