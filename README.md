@@ -86,18 +86,26 @@ NekoTask’s goal is to:
   - Keep strict single-JSON envelope (say + actions) for reliability.
 - [ ] Time presets:
   - Quick presets like Tonight / Tomorrow / This week alongside the two-step picker.
+ - [ ] Configurable AI Persona:
+   - Presets: Neutral (default), Coach, Cheerful Cat, Minimalist.
+   - Persona influences only `say` tone, never `actions` schema.
+ - [ ] Energy level (Low/Medium/High):
+   - Simple self-rating chip; drives “next small step” granularity and optional UI contraction (show only next actionable).
+ - [ ] Privacy toggle for AI snapshot:
+   - Off by default. When on, send a minimal, non-sensitive task snapshot in a system message.
 
 ### Infrastructure
 - [ ] Local persistence with Room (entities/DAOs, v1 schema; replace JSON-only).
 - [ ] Compose Navigation + Task Details screen (edit title/notes/due/priority; manage subtasks).
 
 ### Assistant & Privacy
-- [ ] Privacy toggle: choose whether to send a current-task snapshot to the AI.
-- [ ] Confirmation gates for destructive actions (bulk delete/complete).
+ - [ ] Privacy toggle: choose whether to send a current-task snapshot to the AI (with clear copy; default off).
+ - [ ] Confirmation gates for destructive actions (bulk delete/complete) and guardrails around overdue bulk ops.
 
 ### Reminders & Input
-- [ ] Gentle reminders with WorkManager (due and overdue notifications; rate limited).
-- [ ] In-app voice input for quick add; App Shortcuts for “Quick Add”.
+ - [ ] Gentle reminders with WorkManager (due and overdue notifications; rate limited, quiet hours friendly).
+ - [ ] Focus 20-min mode (Pomodoro-like) with gentle start/stop cues.
+ - [ ] In-app voice input for quick add; App Shortcuts for “Quick Add”.
 
 ### Later
 - [ ] Accessibility improvements (large touch targets, high contrast, single-hand mode).
