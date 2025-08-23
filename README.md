@@ -149,4 +149,4 @@ Responses are parsed and mapped to app actions. Mock and real clients are both s
 
 ---
 
-> 🎓 *This project is currently developed as part of a Master's dissertation.*
+> 🎓 *This project is currently developed as part of a Master's dissertation —  But I've taken it personally because me also live with it. *
