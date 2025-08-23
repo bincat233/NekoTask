@@ -19,6 +19,15 @@ At this stage, **NekoTask is a functional prototype**.
   - Minimal, distraction-free interface.
   - Reduced decision fatigue — AI agent simplifies task entry.
   - Playful cat theme for motivation.
+ - **AI Subtask Decomposition (Core Idea)**
+   - Ask the assistant to break a big task into small actionable subtasks.
+   - Uses a strict JSON action contract to add tasks (optionally referencing a `parentId`).
+ - **Due Date Picker (Two-step)**
+   - Material 3 DatePicker + TimePicker with a two-step flow (date → time).
+   - Quick visibility of due-state; button indicates selection.
+ - **Chat Overlay Modes**
+   - Peek bubbles over the list, or switch to fullscreen chat.
+   - Pin/auto-dismiss behavior to reduce noise.
 
 ## 📸 Screenshots
 *(to be added — current UI demo with AI chat + manual add card)*
@@ -29,6 +38,8 @@ At this stage, **NekoTask is a functional prototype**.
 - **Material 3 design**
 - **Ktor** for networking
 - **OpenAI GPT API** integration
+ - **kotlinx.serialization** for robust JSON parsing
+ - **kotlinx.datetime** for time handling
 
 ## 🔑 Setup
 To use the AI features, you will need to provide your own OpenAI API key.
@@ -45,7 +56,9 @@ To use the AI features, you will need to provide your own OpenAI API key.
 - ✅ Sample cat-themed task data for testing.
 - ✅ Tasks loaded from a local JSON file.
 - ✅ AI backend integration with mock and real clients.
-- ❌ No persistence layer (no database).
+ - ✅ Two-step due date selection (date → time) wired to task creation.
+ - ✅ Strict JSON contract for AI responses (say + actions) with parsing and safety checks.
+ - ❌ No persistence layer yet (no database; in-memory only).
 
 ---
 
@@ -57,13 +70,74 @@ NekoTask’s goal is to:
 - Keep **manual controls minimal**.
 - Provide **AI-assisted task management**.
 - Build a **friendly, motivating environment** with playful design.
+ - Turn big, vague tasks into small, executable steps with **AI subtask decomposition**.
 
 ---
 
-## 💡 Roadmap
-- [ ] Task persistence with local database.
-- [ ] Accessibility improvements.
-- [ ] Gamified streaks/rewards system.
+## 💡 Roadmap (Next 10 days focus + beyond)
+
+### Near-term (aimed for the current sprint)
+- [ ] Subtasks S1 (in-memory):
+  - `Task` model gains `parentId` (flat storage; UI groups by parent).
+  - Expandable subtasks under each parent with inline add and quick complete.
+  - Parent progress indicator (e.g., 2/5).
+- [ ] AI contract update:
+  - `add_task` supports optional `parentId` for AI-generated subtasks.
+  - Keep strict single-JSON envelope (say + actions) for reliability.
+- [ ] Time presets:
+  - Quick presets like Tonight / Tomorrow / This week alongside the two-step picker.
+
+### Infrastructure
+- [ ] Local persistence with Room (entities/DAOs, v1 schema; replace JSON-only).
+- [ ] Compose Navigation + Task Details screen (edit title/notes/due/priority; manage subtasks).
+
+### Assistant & Privacy
+- [ ] Privacy toggle: choose whether to send a current-task snapshot to the AI.
+- [ ] Confirmation gates for destructive actions (bulk delete/complete).
+
+### Reminders & Input
+- [ ] Gentle reminders with WorkManager (due and overdue notifications; rate limited).
+- [ ] In-app voice input for quick add; App Shortcuts for “Quick Add”.
+
+### Later
+- [ ] Accessibility improvements (large touch targets, high contrast, single-hand mode).
+- [ ] Optional light gamification (streaks/stickers) — low-arousal, can be turned off.
+- [ ] Advanced search/filter/sort; calendar views.
+- [ ] Wearable and assistant integrations (Android first).
+
+---
+
+## 🤖 AI Contract (Brief)
+The real client sends a system prompt requiring the assistant to reply with a single compact JSON object:
+
+```json
+{
+  "say": "string",
+  "actions": [
+    { "type": "add_task", "title": "string", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123? },
+    { "type": "complete_task", "id": 123 },
+    { "type": "delete_task", "id": 123 },
+    { "type": "update_task", "id": 123, "title": "string?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123? }
+  ]
+}
+```
+
+Responses are parsed and mapped to app actions. Mock and real clients are both supported.
+
+---
+
+## 🔬 Research Notes (for the dissertation)
+- Primary research questions (examples):
+  - Does AI-assisted subtasking reduce “time-to-start” (time to complete the first subtask)?
+  - Do subtasks + progress visualization improve completion rate and reduce overdue rate?
+  - Does a strict JSON contract increase action reliability (parse success and execution rate)?
+- Suggested metrics:
+  - Parse success rate; action execution success; undo rate.
+  - Start time; completion/overdue rates; clicks per operation.
+  - Short subjective scales (SUS, simplified NASA-TLX).
+- Ethics & privacy:
+  - No medical claims. Use “support level” language, not diagnosis.
+  - Snapshot-to-AI toggle defaults to off; users can opt in.
 
 ---
 
