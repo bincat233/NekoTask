@@ -72,6 +72,75 @@ fun MainScreen(
 
     BackHandler(enabled = state.manualMode) { onEvent(UiEvent.CloseManual) }
 
+@Composable
+fun ChatOverlay(
+    messages: List<me.superbear.todolist.ChatMessage>,
+    imeVisible: Boolean,
+    manualMode: Boolean,
+    fabWidthDp: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+){
+    val localDensity = LocalDensity.current
+
+    // Parent applies system insets once for all bubbles
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding()
+            .navigationBarsPadding()
+    ) {
+        val messageSpacing = 12.dp  // fixed spacing between messages
+        val inputBarHeight = 70.dp  // baseline above input bar
+
+        // store each message's measured size
+        val messageSizes = remember { mutableStateOf(mutableMapOf<String, IntSize>()) }
+
+        messages.forEachIndexed { index, message ->
+            val isLast = index == messages.lastIndex
+            val avoidancePadding by animateDpAsState(
+                if (isLast && !imeVisible && !manualMode) {
+                    fabWidthDp + 32.dp // FAB width + 16dp margins on both sides
+                } else 0.dp,
+                label = ""
+            )
+
+            val bottomOffset = with(localDensity) {
+                var totalOffset = inputBarHeight.toPx()
+                for (i in (index + 1) until messages.size) {
+                    val belowMessage = messages[i]
+                    val belowSize = messageSizes.value[belowMessage.id]
+                    val belowHeightPx = (belowSize?.height?.toFloat() ?: 50.dp.toPx())
+                    totalOffset += belowHeightPx + messageSpacing.toPx()
+                }
+                totalOffset.toDp()
+            }
+
+            val isUser = message.sender == Sender.User
+            val align = if (isUser) Alignment.BottomEnd else Alignment.BottomStart
+
+            val bubbleModifier = Modifier
+                .align(align)
+                .padding(bottom = bottomOffset)
+                .padding(end = avoidancePadding)
+                .onGloballyPositioned { coordinates ->
+                    val newSize = coordinates.size
+                    val oldSize = messageSizes.value[message.id]
+                    if (oldSize != newSize) {
+                        messageSizes.value = messageSizes.value.toMutableMap().apply {
+                            put(message.id, newSize)
+                        }
+                    }
+                }
+
+            SpeechBubble(
+                text = message.text,
+                isUser = isUser,
+                modifier = bubbleModifier
+            )
+        }
+    }
+}
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
@@ -129,62 +198,12 @@ fun MainScreen(
             }
         }
 
-        // 智能消息间距系统
-        val messageSpacing = 12.dp  // 消息间的固定间距
-        val inputBarHeight = 70.dp  // 输入栏高度
-        
-        // 存储每条消息的高度
-        val messageSizes = remember { mutableStateOf(mutableMapOf<String, IntSize>()) }
-        
-        state.messages.forEachIndexed { index, message ->
-            val isLast = index == state.messages.lastIndex
-            val avoidancePadding by animateDpAsState(
-                if (isLast && !state.imeVisible && !state.manualMode) {
-                    // FAB宽度 + 左右各留16dp缓冲空间
-                    state.fabWidthDp + 32.dp
-                } else 0.dp,
-                label = ""
-            )
-            
-            // 计算当前消息应该距离底部的距离
-            val bottomOffset = with(localDensity) {
-                var totalOffset = inputBarHeight.toPx()
-                
-                // 累加下方所有消息的高度 + 间距
-                for (i in (index + 1) until state.messages.size) {
-                    val belowMessage = state.messages[i]
-                    val belowSize = messageSizes.value[belowMessage.id]
-                    if (belowSize != null) {
-                        totalOffset += belowSize.height + messageSpacing.toPx()
-                    } else {
-                        // 如果还没测量到高度，使用估算值
-                        totalOffset += 50.dp.toPx() + messageSpacing.toPx()
-                    }
-                }
-                
-                totalOffset.toDp()
-            }
-
-            val isUser = message.sender == Sender.User
-            val align = if (isUser) Alignment.BottomEnd else Alignment.BottomStart
-
-            val bubbleModifier = Modifier
-                .align(align)
-                .padding(bottom = bottomOffset)
-                .padding(end = avoidancePadding)
-                .imePadding()
-                .onGloballyPositioned { coordinates ->
-                    messageSizes.value = messageSizes.value.toMutableMap().apply {
-                        put(message.id, coordinates.size)
-                    }
-                }
-
-            SpeechBubble(
-                text = message.text,
-                isUser = isUser,
-                modifier = bubbleModifier
-            )
-        }
+        ChatOverlay(
+            messages = state.messages,
+            imeVisible = state.imeVisible,
+            manualMode = state.manualMode,
+            fabWidthDp = state.fabWidthDp
+        )
 
         if (state.manualMode) {
             Scrim(onDismiss = { onEvent(UiEvent.CloseManual) }, modifier = Modifier.fillMaxSize())
@@ -255,6 +274,7 @@ fun ManualAddCard(
             modifier = modifier
                 .fillMaxWidth()
                 .imePadding()
+                .navigationBarsPadding()// ← 没弹键盘时让出导航条
         ) {
             Column(
                 modifier = Modifier
