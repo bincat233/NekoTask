@@ -36,11 +36,40 @@ class MockAssistantClient : AssistantClient {
     }
 }
 
+// --- Logging helpers (only used for prettier logs) ---
+private fun prettyWholeJson(text: String): String = runCatching {
+    val element = Json.parseToJsonElement(text)
+    Json { prettyPrint = true }.encodeToString(element)
+}.getOrElse { text }
+
+// Try to pretty-print embedded JSON inside a string. If no valid JSON is found, return original text.
+private fun prettyEmbeddedJson(text: String): String {
+    // Heuristic: find the first top-level '{' or '[' and the last matching '}' or ']'
+    fun extractCandidate(s: String): String? {
+        val startObj = s.indexOf('{')
+        val startArr = s.indexOf('[')
+        val start = listOf(startObj, startArr).filter { it >= 0 }.minOrNull() ?: return null
+        val endObj = s.lastIndexOf('}')
+        val endArr = s.lastIndexOf(']')
+        val end = maxOf(endObj, endArr)
+        if (end > start) return s.substring(start, end + 1)
+        return null
+    }
+
+    val candidate = extractCandidate(text) ?: return text
+    return runCatching {
+        val element = Json.parseToJsonElement(candidate)
+        val pretty = Json { prettyPrint = true }.encodeToString(element)
+        // Replace only the candidate part with pretty version to preserve any prefixes like labels
+        text.replaceRange(text.indexOf(candidate), text.indexOf(candidate) + candidate.length, pretty)
+    }.getOrElse { text }
+}
+
 class RealAssistantClient : AssistantClient {
 
     private val json = Json {
         ignoreUnknownKeys = true
-        prettyPrint = true
+        prettyPrint = false  // 传输时使用紧凑格式
     }
 
     private val client = HttpClient {
@@ -52,6 +81,42 @@ class RealAssistantClient : AssistantClient {
     private val apiKey: String = BuildConfig.OPENAI_API_KEY
 
     var stateProvider: (() -> String)? = null
+
+    // --- Debug logging helpers ---
+    private fun logRequest(request: OpenAIRequest, messages: List<OpenAIChatMessage>) {
+        Log.d("RealAssistantClient", "Request (pretty): ${prettyWholeJson(json.encodeToString(request))}")
+        val prettyContents = messages.joinToString(separator = "\n") { m ->
+            "- ${m.role}:\n" + prettyEmbeddedJson(m.content)
+        }
+        Log.d("RealAssistantClient", "Request message contents (pretty):\n$prettyContents")
+    }
+
+    private fun logResponse(response: String, assistantContent: String?) {
+        Log.d("RealAssistantClient", "Response (pretty): ${prettyWholeJson(response)}")
+        assistantContent?.let {
+            Log.d("RealAssistantClient", "Response content (pretty):\n${prettyEmbeddedJson(it)}")
+        }
+    }
+
+    private fun parseResponse(response: String): Result<String> {
+        return try {
+            val openAIResponse = json.decodeFromString<OpenAIResponse>(response)
+            val assistantContent = openAIResponse.choices.firstOrNull()?.message?.content
+            logResponse(response, assistantContent)
+            Result.success(openAIResponse.choices.first().message.content)
+        } catch (e: MissingFieldException) {
+            handleParsingError(response, e)
+        }
+    }
+
+    private fun handleParsingError(response: String, e: MissingFieldException): Result<String> {
+        return try {
+            val errorResponse = json.decodeFromString<OpenAIErrorResponse>(response)
+            Result.failure(Exception("API Error: ${errorResponse.error.message}"))
+        } catch (_: Exception) {
+            Result.failure(Exception("Failed to parse API response: ${e.message}"))
+        }
+    }
 
     override suspend fun send(message: String, history: List<ChatMessage>): Result<String> {
         if (apiKey.isBlank()) {
@@ -103,33 +168,24 @@ Rules:
         })
 
         val request = OpenAIRequest(
-            model = "gpt-5o-mini",
+            model = "gpt-5-mini",
             messages = messages.takeLast(10) // Ensure we don't exceed token limits
         )
-        lateinit var response: String
-        try {
-            Log.d("RealAssistantClient", "Request: ${json.encodeToString(request)}")
-            response = client.post("https://api.openai.com/v1/chat/completions") {
+        
+        return try {
+            logRequest(request, messages)
+            
+            val response = client.post("https://api.openai.com/v1/chat/completions") {
                 header("Authorization", "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(request)
-            }.body()
-
-            Log.d("RealAssistantClient", "Response: $response")
-
-            val openAIResponse = json.decodeFromString<OpenAIResponse>(response)
-            return Result.success(openAIResponse.choices.first().message.content)
+            }.body<String>()
+            
+            parseResponse(response)
         } catch (e: HttpRequestTimeoutException) {
-            return Result.failure(Exception("Request timed out. Please check your internet connection and try again."))
-        } catch (e: MissingFieldException) {
-            return try {
-                val errorResponse = json.decodeFromString<OpenAIErrorResponse>(response)
-                Result.failure(Exception("API Error: ${errorResponse.error.message}"))
-            } catch (_: Exception) {
-                Result.failure(Exception("Failed to parse API response: ${e.message}"))
-            }
+            Result.failure(Exception("Request timed out. Please check your internet connection and try again."))
         } catch (e: Exception) {
-            return Result.failure(Exception("An unexpected error occurred: ${e.message}"))
+            Result.failure(Exception("An unexpected error occurred: ${e.message}"))
         }
     }
 }

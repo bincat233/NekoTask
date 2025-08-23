@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.datetime.Clock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -42,7 +43,14 @@ class AssistantActionParser {
     private val fencedRegex = Regex("""´´´(json|JSON)?\s*([\s\S]*?)\s*´´´""", RegexOption.MULTILINE)
 
     fun parseEnvelope(text: String): Result<AssistantEnvelope> {
-        Log.d("AssistantActionParser", "Received data: $text")
+        // Pretty-print JSON (if possible) to make logs easier to read
+        val prettySample = runCatching {
+            val jsonText = extractJson(text) ?: text
+            val element = Json.parseToJsonElement(jsonText)
+            val pretty = Json { prettyPrint = true }
+            pretty.encodeToString(element)
+        }.getOrElse { text }
+        Log.d("AssistantActionParser", "Received data:\n$prettySample")
         return runCatching {
             val jsonText = extractJson(text)
 
@@ -105,6 +113,9 @@ class AssistantActionParser {
                     dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
                     priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() }
                 )
+            }
+            "complete_task" -> dto.id?.let { id ->
+                AssistantAction.CompleteTask(id = id)
             }
             else -> null
         }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -51,6 +52,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.superbear.todolist.ChatInputBar
 import me.superbear.todolist.Sender
@@ -124,34 +129,61 @@ fun MainScreen(
             }
         }
 
-        val bottomPadding = 80.dp
+        // 智能消息间距系统
+        val messageSpacing = 12.dp  // 消息间的固定间距
+        val inputBarHeight = 70.dp  // 输入栏高度
+        
+        // 存储每条消息的高度
+        val messageSizes = remember { mutableStateOf(mutableMapOf<String, IntSize>()) }
+        
         state.messages.forEachIndexed { index, message ->
             val isLast = index == state.messages.lastIndex
             val avoidancePadding by animateDpAsState(
-                if (isLast && !state.imeVisible && !state.manualMode) state.fabWidthDp + 16.dp else 0.dp,
+                if (isLast && !state.imeVisible && !state.manualMode) {
+                    // FAB宽度 + 左右各留16dp缓冲空间
+                    state.fabWidthDp + 32.dp
+                } else 0.dp,
                 label = ""
             )
-
-            when (message.sender) {
-                Sender.Assistant -> SpeechBubble(
-                    text = message.text,
-                    isUser = false,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(bottom = bottomPadding * (state.messages.size - index))
-                        .padding(end = avoidancePadding)
-                        .imePadding()
-                )
-                Sender.User -> SpeechBubble(
-                    text = message.text,
-                    isUser = true,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = bottomPadding * (state.messages.size - index))
-                        .padding(end = avoidancePadding)
-                        .imePadding()
-                )
+            
+            // 计算当前消息应该距离底部的距离
+            val bottomOffset = with(localDensity) {
+                var totalOffset = inputBarHeight.toPx()
+                
+                // 累加下方所有消息的高度 + 间距
+                for (i in (index + 1) until state.messages.size) {
+                    val belowMessage = state.messages[i]
+                    val belowSize = messageSizes.value[belowMessage.id]
+                    if (belowSize != null) {
+                        totalOffset += belowSize.height + messageSpacing.toPx()
+                    } else {
+                        // 如果还没测量到高度，使用估算值
+                        totalOffset += 50.dp.toPx() + messageSpacing.toPx()
+                    }
+                }
+                
+                totalOffset.toDp()
             }
+
+            val isUser = message.sender == Sender.User
+            val align = if (isUser) Alignment.BottomEnd else Alignment.BottomStart
+
+            val bubbleModifier = Modifier
+                .align(align)
+                .padding(bottom = bottomOffset)
+                .padding(end = avoidancePadding)
+                .imePadding()
+                .onGloballyPositioned { coordinates ->
+                    messageSizes.value = messageSizes.value.toMutableMap().apply {
+                        put(message.id, coordinates.size)
+                    }
+                }
+
+            SpeechBubble(
+                text = message.text,
+                isUser = isUser,
+                modifier = bubbleModifier
+            )
         }
 
         if (state.manualMode) {
@@ -283,5 +315,51 @@ fun Scrim(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
             color = Color.Black.copy(alpha = 0.35f),
             modifier = Modifier.fillMaxSize()
         ) {}
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TaskItemPreview() {
+    MaterialTheme {
+        TaskItem(
+            task = Task(
+                id = 1,
+                title = "Sample Task",
+                notes = "This is a sample task for preview",
+                status = "OPEN",
+                priority = me.superbear.todolist.Priority.MEDIUM,
+                createdAt = kotlinx.datetime.Clock.System.now()
+            ),
+            onToggle = { }
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SpeechBubblePreview() {
+    MaterialTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // 用户消息 - 右对齐
+            SpeechBubble(
+                text = "Add a new task for tomorrow",
+                isUser = true,
+                modifier = Modifier.align(Alignment.TopEnd)
+            )
+            
+            // AI 消息 - 左对齐，稍微向下偏移
+            SpeechBubble(
+                text = "Hello! I can help you manage your tasks.",
+                isUser = false,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 60.dp)
+            )
+        }
     }
 }

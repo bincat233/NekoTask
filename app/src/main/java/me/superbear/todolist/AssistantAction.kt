@@ -19,4 +19,8 @@ sealed class AssistantAction {
         val dueAtIso: String? = null,
         val priority: String? = null
     ) : AssistantAction()
+
+    data class CompleteTask(
+        val id: Long
+    ) : AssistantAction()
 }

@@ -67,14 +67,29 @@ sealed class UiEvent {
 }
 
 
+/**
+ * MainViewModel — 数据与业务逻辑的“单一来源”，配合 Compose 实现单向数据流。
+ *
+ * 概念速记（面向 Java/C/JS 背景）：
+ * - ViewModel：类似“带状态的控制器”，不持有 View 引用，专注管理 UI 需要的数据和业务。
+ * - StateFlow：可订阅的“状态源”（像 JS 的 BehaviorSubject/Redux store），始终有一个当前值。
+ * - MutableStateFlow：StateFlow 的可写版（VM 内部用它改值），对外暴露只读 StateFlow。
+ * - 单向数据流：
+ *   上行用回调（UI -> onEvent(event)），下行用状态流（VM -> uiState）。
+ *
+ * 读取建议：
+ * 1) 看 onEvent(event)：UI 发上来的“回调入口”。
+ * 2) 看各 handle* /set* /add* /update*：具体的状态变更方法。
+ * 3) 看 init{}：实例创建后立即运行的初始化逻辑（类似 Java 构造体中的代码块）。
+ */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-
     private val todoRepository = TodoRepository(application)
     private val mockAssistantClient: AssistantClient = MockAssistantClient()
     private val realAssistantClient: AssistantClient = RealAssistantClient()
     private val assistantActionParser = AssistantActionParser()
     private val json = Json { prettyPrint = true }
     // _uiState 内部可变，如果是 uiState 就是对外只读
+    // _uiState：MutableStateFlow，可写的“状态源”。仅 ViewModel 内部修改。
     private val _uiState = MutableStateFlow(UiState(
         items = emptyList(),
         manualMode = false,
@@ -85,15 +100,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         imeVisible = false,
         useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT
     ))
+    // uiState：只读 StateFlow。UI 侧（Compose）通过 collectAsState() 订阅它来渲染。
+    // 说明：“同一个流”——asStateFlow() 只是暴露只读视图，不复制数据源。
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     //fun setUseMockAssistant(useMock: Boolean) {
     //    onEvent(UiEvent.SetUseMockAssistant(useMock))
     //}
-    
+
+    // init{}：实例初始化块。每次创建本 ViewModel 实例时执行一次。
+    // 用途：加载初始数据、建立与 AI 客户端的状态快照提供器等。
     init {
-        loadTasks()
+        loadTasks() // 启动时从仓库加载任务列表 -> 更新 _uiState
         (realAssistantClient as? RealAssistantClient)?.stateProvider = {
+            // 将“当前任务快照”提供给 AI，便于模型理解现状并引用正确的 id
             TaskStateSnapshotBuilder.build(uiState.value.items)
         }
     }
@@ -106,6 +126,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
+    // onEvent：UI 上传事件的“回调入口”。
+    // View（Compose）里通过 viewModel::onEvent 把点击/输入等事件传上来。
+    // 这里仅做路由分发，每个事件交由更小的私有方法处理（降低嵌套/提升可读性）。
     fun onEvent(event: UiEvent) {
         when (event) {
             is UiEvent.ToggleTask -> toggleTask(event.task)
@@ -319,6 +342,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     updateTask(updatedTask)
                 } else {
                     Log.w("MainViewModel", "Could not find task with id ${action.id} to update")
+                }
+            }
+            is AssistantAction.CompleteTask -> {
+                val taskToComplete = _uiState.value.items.find { it.id == action.id }
+                if (taskToComplete != null) {
+                    val completedTask = taskToComplete.copy(status = "DONE")
+                    updateTask(completedTask)
+                    Log.d("MainViewModel", "Completed task with id ${action.id}")
+                } else {
+                    Log.w("MainViewModel", "Could not find task with id ${action.id} to complete")
                 }
             }
         }
