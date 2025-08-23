@@ -61,6 +61,38 @@ import me.superbear.todolist.ChatInputBar
 import me.superbear.todolist.Sender
 import me.superbear.todolist.SpeechBubble
 import me.superbear.todolist.Task
+import me.superbear.todolist.MessageStatus
+import androidx.compose.runtime.LaunchedEffect
+
+// Temporary debug flag: force fullscreen mode
+private const val DEBUG_FORCE_FULLSCREEN = true
+
+// Main app modes - replaces scattered boolean states
+sealed class AppMode {
+    object Normal : AppMode()           // Normal task list view with peek chat
+    object ManualAdd : AppMode()        // Manual task addition mode
+    object ChatFullscreen : AppMode()   // Fullscreen chat mode
+}
+
+// Chat overlay modes
+sealed class ChatOverlayMode {
+    data class Peek(val autoDismissMs: Long = 8000L) : ChatOverlayMode()
+    object Fullscreen : ChatOverlayMode()
+}
+
+// Helper function to determine current app mode
+@Composable
+private fun getCurrentAppMode(
+    manualMode: Boolean,
+    chatOverlayMode: String,
+    debugForceFullscreen: Boolean = DEBUG_FORCE_FULLSCREEN
+): AppMode {
+    return when {
+        manualMode -> AppMode.ManualAdd
+        debugForceFullscreen || chatOverlayMode == "fullscreen" -> AppMode.ChatFullscreen
+        else -> AppMode.Normal
+    }
+}
 
 @Composable
 fun MainScreen(
@@ -69,8 +101,11 @@ fun MainScreen(
     val state by viewModel.uiState.collectAsState()
     val onEvent = viewModel::onEvent
     val localDensity = LocalDensity.current
+    
+    // Calculate current app mode
+    val currentMode = getCurrentAppMode(state.manualMode, state.chatOverlayMode)
 
-    BackHandler(enabled = state.manualMode) { onEvent(UiEvent.CloseManual) }
+    BackHandler(enabled = currentMode == AppMode.ManualAdd) { onEvent(UiEvent.CloseManual) }
 
 @Composable
 fun ChatOverlay(
@@ -78,6 +113,9 @@ fun ChatOverlay(
     imeVisible: Boolean,
     manualMode: Boolean,
     fabWidthDp: androidx.compose.ui.unit.Dp,
+    mode: ChatOverlayMode,
+    isPinned: (me.superbear.todolist.ChatMessage) -> Boolean = { false },
+    onMessageTimeout: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ){
     val localDensity = LocalDensity.current
@@ -92,10 +130,48 @@ fun ChatOverlay(
         val messageSpacing = 12.dp  // fixed spacing between messages
         val inputBarHeight = 70.dp  // baseline above input bar
 
+        // Fullscreen mode background
+        when (mode) {
+            is ChatOverlayMode.Fullscreen -> {
+                // Dim scrim that intercepts clicks, but leaves space for input bar
+                val interaction = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = inputBarHeight) // Don't cover input bar
+                        .clickable(indication = null, interactionSource = interaction) { }
+                ) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.35f),
+                        modifier = Modifier.fillMaxSize()
+                    ) {}
+                }
+            }
+            is ChatOverlayMode.Peek -> {
+                // No background in peek mode
+            }
+        }
+
         // store each message's measured size
         val messageSizes = remember { mutableStateOf(mutableMapOf<String, IntSize>()) }
 
         messages.forEachIndexed { index, message ->
+            // Auto-dismiss timeout for each message (unless pinned) - only in peek mode
+            when (mode) {
+                is ChatOverlayMode.Peek -> {
+                    val pinned = isPinned(message)
+                    if (!pinned) {
+                        LaunchedEffect(message.id, pinned) {
+                            kotlinx.coroutines.delay(mode.autoDismissMs)
+                            onMessageTimeout(message.id)
+                        }
+                    }
+                }
+                is ChatOverlayMode.Fullscreen -> {
+                    // No timeout in fullscreen mode
+                }
+            }
+
             val isLast = index == messages.lastIndex
             val avoidancePadding by animateDpAsState(
                 if (isLast && !imeVisible && !manualMode) {
@@ -118,10 +194,27 @@ fun ChatOverlay(
             val isUser = message.sender == Sender.User
             val align = if (isUser) Alignment.BottomEnd else Alignment.BottomStart
 
+            // Click handling based on mode
+            val interaction = remember { MutableInteractionSource() }
+            val clickModifier = when (mode) {
+                is ChatOverlayMode.Peek -> {
+                    // In peek mode, bubbles consume clicks to prevent background interaction
+                    Modifier.clickable(
+                        indication = null,
+                        interactionSource = interaction
+                    ) { /* consume click */ }
+                }
+                is ChatOverlayMode.Fullscreen -> {
+                    // In fullscreen mode, bubbles don't need to consume clicks
+                    Modifier
+                }
+            }
+
             val bubbleModifier = Modifier
                 .align(align)
                 .padding(bottom = bottomOffset)
                 .padding(end = avoidancePadding)
+                .then(clickModifier)
                 .onGloballyPositioned { coordinates ->
                     val newSize = coordinates.size
                     val oldSize = messageSizes.value[message.id]
@@ -145,7 +238,7 @@ fun ChatOverlay(
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
-                if (!state.manualMode) {
+                if (currentMode != AppMode.ManualAdd) {
                     ChatInputBar(
                         onSend = { onEvent(UiEvent.SendChat(it)) },
                         modifier = Modifier
@@ -155,7 +248,8 @@ fun ChatOverlay(
                 }
             },
             floatingActionButton = {
-                if (!state.manualMode && !state.imeVisible) {
+                // Show FAB only in normal mode when keyboard is not visible
+                if (currentMode == AppMode.Normal && !state.imeVisible) {
                     ManualAddFab(
                         onClick = { onEvent(UiEvent.OpenManual) },
                         modifier = Modifier
@@ -198,14 +292,35 @@ fun ChatOverlay(
             }
         }
 
+        // Dynamic ChatOverlay based on app mode
+        val overlayMode = when (currentMode) {
+            AppMode.ChatFullscreen -> ChatOverlayMode.Fullscreen
+            else -> ChatOverlayMode.Peek()
+        }
+        val overlayMessages = when (currentMode) {
+            AppMode.ChatFullscreen -> state.messages
+            else -> state.peekMessages
+        }
+
         ChatOverlay(
-            messages = state.messages,
+            messages = overlayMessages,
             imeVisible = state.imeVisible,
             manualMode = state.manualMode,
-            fabWidthDp = state.fabWidthDp
+            fabWidthDp = state.fabWidthDp,
+            mode = overlayMode,
+            isPinned = { message ->
+                // Manual pin
+                message.id in state.pinnedMessageIds ||
+                // Auto-pin non-sent messages
+                message.status != MessageStatus.Sent ||
+                // Auto-pin user messages when assistant is still processing
+                (message.sender == Sender.User && 
+                 state.peekMessages.any { it.sender == Sender.Assistant && it.status == MessageStatus.Sending })
+            },
+            onMessageTimeout = { id -> onEvent(UiEvent.DismissPeekMessage(id)) }
         )
 
-        if (state.manualMode) {
+        if (currentMode == AppMode.ManualAdd) {
             Scrim(onDismiss = { onEvent(UiEvent.CloseManual) }, modifier = Modifier.fillMaxSize())
             ManualAddCard(
                 title = state.manualTitle,

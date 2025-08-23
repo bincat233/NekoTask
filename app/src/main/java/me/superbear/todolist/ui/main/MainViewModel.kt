@@ -46,6 +46,11 @@ data class UiState(
     val manualTitle: String,
     val manualDesc: String,
     val messages: List<ChatMessage>,
+    // Peek mode specific
+    val peekMessages: List<ChatMessage>,
+    val pinnedMessageIds: Set<String>,
+    // Chat overlay mode
+    val chatOverlayMode: String = "peek", // "peek" or "fullscreen"
     val fabWidthDp: Dp,
     val imeVisible: Boolean,
     val useMockAssistant: Boolean = true,
@@ -64,6 +69,12 @@ sealed class UiEvent {
     data class SendChat(val message: String) : UiEvent()
     data class FabMeasured(val widthDp: Dp) : UiEvent()
     data class SetUseMockAssistant(val useMock: Boolean) : UiEvent()
+    // Peek mode events
+    data class DismissPeekMessage(val id: String) : UiEvent()
+    data class PinMessage(val id: String) : UiEvent()
+    data class UnpinMessage(val id: String) : UiEvent()
+    // Chat overlay mode events
+    data class SetChatOverlayMode(val mode: String) : UiEvent()
 }
 
 
@@ -96,6 +107,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         manualTitle = "",
         manualDesc = "",
         messages = emptyList(),
+        peekMessages = emptyList(),
+        pinnedMessageIds = emptySet(),
+        chatOverlayMode = "peek",
         fabWidthDp = 0.dp,
         imeVisible = false,
         useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT
@@ -140,6 +154,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is UiEvent.SendChat -> handleSendChat(event.message)
             is UiEvent.FabMeasured -> setFabWidth(event.widthDp)
             is UiEvent.SetUseMockAssistant -> setUseMockAssistant(event.useMock)
+            is UiEvent.DismissPeekMessage -> dismissPeekMessage(event.id)
+            is UiEvent.PinMessage -> pinMessage(event.id)
+            is UiEvent.UnpinMessage -> unpinMessage(event.id)
+            is UiEvent.SetChatOverlayMode -> setChatOverlayMode(event.mode)
         }
     }
 
@@ -162,6 +180,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun setUseMockAssistant(useMock: Boolean) {
         _uiState.update { it.copy(useMockAssistant = useMock) }
+    }
+
+    private fun setChatOverlayMode(mode: String) {
+        _uiState.update { it.copy(chatOverlayMode = mode) }
     }
 
     // Task Management
@@ -215,8 +237,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Chat Message Management
     private fun addMessages(vararg messages: ChatMessage) {
-        _uiState.update {
-            it.copy(messages = it.messages + messages)
+        _uiState.update { state ->
+            val added = messages.toList()
+            state.copy(
+                messages = state.messages + added,
+                peekMessages = state.peekMessages + added
+            )
         }
     }
 
@@ -225,13 +251,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val newMessages = state.messages.map { msg ->
                 if (msg.id == oldMessageId) newMessage else msg
             }
-            state.copy(messages = newMessages)
+            val newPeekMessages = state.peekMessages.map { msg ->
+                if (msg.id == oldMessageId) newMessage else msg
+            }
+            state.copy(messages = newMessages, peekMessages = newPeekMessages)
         }
     }
 
     private fun removeMessage(messageId: String) {
         _uiState.update { state ->
-            state.copy(messages = state.messages.filter { it.id != messageId })
+            state.copy(
+                messages = state.messages.filter { it.id != messageId },
+                peekMessages = state.peekMessages.filter { it.id != messageId }
+            )
+        }
+    }
+
+    // Peek mode specific methods
+    private fun dismissPeekMessage(messageId: String) {
+        _uiState.update { state ->
+            state.copy(peekMessages = state.peekMessages.filter { it.id != messageId })
+        }
+    }
+
+    private fun pinMessage(messageId: String) {
+        _uiState.update { state ->
+            state.copy(pinnedMessageIds = state.pinnedMessageIds + messageId)
+        }
+    }
+
+    private fun unpinMessage(messageId: String) {
+        _uiState.update { state ->
+            state.copy(pinnedMessageIds = state.pinnedMessageIds - messageId)
         }
     }
 
