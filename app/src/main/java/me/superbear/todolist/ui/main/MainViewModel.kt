@@ -54,7 +54,10 @@ data class UiState(
     val fabWidthDp: Dp,
     val imeVisible: Boolean,
     val useMockAssistant: Boolean = true,
-    val executeAssistantActions: Boolean = true
+    val executeAssistantActions: Boolean = true,
+    // Date time picker state
+    val showDateTimePicker: Boolean = false,
+    val selectedDueDate: Long? = null // Unix timestamp in milliseconds
 )
 
 // This is a sealed class that represents all possible UI events
@@ -76,6 +79,10 @@ sealed class UiEvent {
     // Chat overlay mode events
     data class SetChatOverlayMode(val mode: String) : UiEvent()
     object EnterFullscreenChat : UiEvent()
+    // Date time picker events
+    object OpenDateTimePicker : UiEvent()
+    object CloseDateTimePicker : UiEvent()
+    data class SetDueDate(val timestamp: Long?) : UiEvent()
 }
 
 
@@ -113,7 +120,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         chatOverlayMode = "peek",
         fabWidthDp = 0.dp,
         imeVisible = false,
-        useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT
+        useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT,
+        showDateTimePicker = false,
+        selectedDueDate = null
     ))
     // uiState：只读 StateFlow。UI 侧（Compose）通过 collectAsState() 订阅它来渲染。
     // 说明：“同一个流”——asStateFlow() 只是暴露只读视图，不复制数据源。
@@ -160,6 +169,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is UiEvent.UnpinMessage -> unpinMessage(event.id)
             is UiEvent.SetChatOverlayMode -> setChatOverlayMode(event.mode)
             is UiEvent.EnterFullscreenChat -> setChatOverlayMode("fullscreen")
+            is UiEvent.OpenDateTimePicker -> setShowDateTimePicker(true)
+            is UiEvent.CloseDateTimePicker -> setShowDateTimePicker(false)
+            is UiEvent.SetDueDate -> setDueDate(event.timestamp)
         }
     }
 
@@ -188,13 +200,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(chatOverlayMode = mode) }
     }
 
+    private fun setShowDateTimePicker(show: Boolean) {
+        _uiState.update { it.copy(showDateTimePicker = show) }
+    }
+
+    private fun setDueDate(timestamp: Long?) {
+        _uiState.update { it.copy(selectedDueDate = timestamp) }
+    }
+
     // Task Management
     private fun handleManualAddSubmit(title: String, description: String?) {
+        val currentState = _uiState.value
+        val dueAtInstant = currentState.selectedDueDate?.let { timestamp ->
+            Instant.fromEpochMilliseconds(timestamp)
+        }
+        
         val newTask = Task(
             id = System.currentTimeMillis(),
             title = title,
             notes = description,
             createdAt = Clock.System.now(),
+            dueAt = dueAtInstant,
             status = "OPEN"
         )
         addTask(newTask)
@@ -232,9 +258,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 manualMode = false,
                 manualTitle = "",
-                manualDesc = ""
+                manualDesc = "",
+                selectedDueDate = null,
+                showDateTimePicker = false
             )
         }
+    }
+
+    /**
+     * Create and add a new subtask under the given parent.
+     * Uses parentId as the single source of truth; no children list is maintained anywhere else.
+     * @return the newly created Task instance
+     */
+    fun addSubtask(parentId: Long, title: String): Task {
+        val newTask = Task(
+            id = System.currentTimeMillis(),
+            title = title,
+            createdAt = Clock.System.now(),
+            status = "OPEN",
+            parentId = parentId
+        )
+        _uiState.update { state ->
+            state.copy(items = listOf(newTask) + state.items)
+        }
+        return newTask
+    }
+
+    /**
+     * Toggle a subtask's done state.
+     * Performs optimistic update and reverts if repository update fails.
+     */
+    fun toggleSubtaskDone(childId: Long, done: Boolean) {
+        val current = _uiState.value.items.find { it.id == childId }
+        if (current == null) {
+            Log.w("MainViewModel", "toggleSubtaskDone: task $childId not found")
+            return
+        }
+        val updated = current.copy(status = if (done) "DONE" else "OPEN")
+
+        _uiState.update { state ->
+            state.copy(items = state.items.map { if (it.id == childId) updated else it })
+        }
+
+        viewModelScope.launch {
+            val success = todoRepository.updateTaskOnServer(updated)
+            if (!success) {
+                _uiState.update { state ->
+                    state.copy(items = state.items.map { if (it.id == childId) current else it })
+                }
+            }
+        }
+    }
+
+    /**
+     * Get children of a parent, ordered by createdAt ascending.
+     */
+    fun getChildren(parentId: Long): List<Task> {
+        return uiState.value.items
+            .asSequence()
+            .filter { it.parentId == parentId }
+            .sortedBy { it.createdAt }
+            .toList()
+    }
+
+    /**
+     * Compute parent's progress among its children.
+     * @return Pair(doneCount, totalCount)
+     */
+    fun getParentProgress(parentId: Long): Pair<Int, Int> {
+        val children = getChildren(parentId)
+        val total = children.size
+        val done = children.count { it.status == "DONE" }
+        return done to total
     }
 
     // Chat Message Management
