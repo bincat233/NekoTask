@@ -1,5 +1,6 @@
 package me.superbear.todolist.ui.main
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
@@ -44,28 +45,31 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntSize.Companion
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.superbear.todolist.ChatInputBar
 import me.superbear.todolist.Sender
 import me.superbear.todolist.SpeechBubble
 import me.superbear.todolist.Task
 import me.superbear.todolist.MessageStatus
-import androidx.compose.runtime.LaunchedEffect
 
 // Temporary debug flag: force fullscreen mode
 private const val DEBUG_FORCE_FULLSCREEN = true
+private const val DEBUG_FORCE_NO_BLUR_FALLBACK = true
 
 // Main app modes - replaces scattered boolean states
 sealed class AppMode {
@@ -106,135 +110,149 @@ fun MainScreen(
     val currentMode = getCurrentAppMode(state.manualMode, state.chatOverlayMode)
 
     BackHandler(enabled = currentMode == AppMode.ManualAdd) { onEvent(UiEvent.CloseManual) }
+    BackHandler(enabled = currentMode == AppMode.ChatFullscreen) { onEvent(UiEvent.SetChatOverlayMode("peek")) }
 
-@Composable
-fun ChatOverlay(
-    messages: List<me.superbear.todolist.ChatMessage>,
-    imeVisible: Boolean,
-    manualMode: Boolean,
-    fabWidthDp: androidx.compose.ui.unit.Dp,
-    mode: ChatOverlayMode,
-    isPinned: (me.superbear.todolist.ChatMessage) -> Boolean = { false },
-    onMessageTimeout: (String) -> Unit = {},
-    modifier: Modifier = Modifier
+    @Composable
+    fun ChatOverlay(
+        messages: List<me.superbear.todolist.ChatMessage>,
+        imeVisible: Boolean,
+        fabWidthDp: androidx.compose.ui.unit.Dp,
+        mode: ChatOverlayMode,
+        isPinned: (me.superbear.todolist.ChatMessage) -> Boolean = { false },
+        onMessageTimeout: (String) -> Unit = {},
+        modifier: Modifier = Modifier
 ){
-    val localDensity = LocalDensity.current
+        val localDensity = LocalDensity.current
 
-    // Parent applies system insets once for all bubbles
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .imePadding()
-            .navigationBarsPadding()
-    ) {
-        val messageSpacing = 12.dp  // fixed spacing between messages
-        val inputBarHeight = 70.dp  // baseline above input bar
+        // Parent applies system insets once for all bubbles
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .imePadding()
+                .navigationBarsPadding()
+        ) {
+            val messageSpacing = 12.dp  // fixed spacing between messages
+            val inputBarHeight = 70.dp  // baseline above input bar
 
-        // Fullscreen mode background
-        when (mode) {
-            is ChatOverlayMode.Fullscreen -> {
-                // Dim scrim that intercepts clicks, but leaves space for input bar
-                val interaction = remember { MutableInteractionSource() }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = inputBarHeight) // Don't cover input bar
-                        .clickable(indication = null, interactionSource = interaction) { }
-                ) {
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.35f),
-                        modifier = Modifier.fillMaxSize()
-                    ) {}
-                }
-            }
-            is ChatOverlayMode.Peek -> {
-                // No background in peek mode
-            }
-        }
-
-        // store each message's measured size
-        val messageSizes = remember { mutableStateOf(mutableMapOf<String, IntSize>()) }
-
-        messages.forEachIndexed { index, message ->
-            // Auto-dismiss timeout for each message (unless pinned) - only in peek mode
+            // Fullscreen mode background
             when (mode) {
+                is ChatOverlayMode.Fullscreen -> {
+                    // On modern devices, the background is blurred by the caller.
+                    // On older devices, we add a fallback scrim.
+                    val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !DEBUG_FORCE_NO_BLUR_FALLBACK
+                    if (!canBlur) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.85f),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(bottom = inputBarHeight) // Don't cover input bar
+                        ) {}
+                    }
+
+                    // Click interceptor to prevent interaction with blurred content behind
+                    val interaction = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = inputBarHeight) // Don't cover input bar
+                            .clickable(indication = null, interactionSource = interaction) { }
+                    )
+                }
                 is ChatOverlayMode.Peek -> {
-                    val pinned = isPinned(message)
-                    if (!pinned) {
-                        LaunchedEffect(message.id, pinned) {
-                            kotlinx.coroutines.delay(mode.autoDismissMs)
-                            onMessageTimeout(message.id)
+                    // No background in peek mode
+                }
+            }
+
+            // store each message's measured size
+            val messageSizes = remember { mutableStateOf(mutableMapOf<String, IntSize>()) }
+
+            messages.forEachIndexed { index, message ->
+                // Auto-dismiss timeout for each message (unless pinned) - only in peek mode
+                when (mode) {
+                    is ChatOverlayMode.Peek -> {
+                        val pinned = isPinned(message)
+                        if (!pinned) {
+                            LaunchedEffect(message.id, pinned) {
+                                kotlinx.coroutines.delay(mode.autoDismissMs)
+                                onMessageTimeout(message.id)
+                            }
                         }
                     }
-                }
-                is ChatOverlayMode.Fullscreen -> {
-                    // No timeout in fullscreen mode
-                }
-            }
-
-            val isLast = index == messages.lastIndex
-            val avoidancePadding by animateDpAsState(
-                if (isLast && !imeVisible && !manualMode) {
-                    fabWidthDp + 32.dp // FAB width + 16dp margins on both sides
-                } else 0.dp,
-                label = ""
-            )
-
-            val bottomOffset = with(localDensity) {
-                var totalOffset = inputBarHeight.toPx()
-                for (i in (index + 1) until messages.size) {
-                    val belowMessage = messages[i]
-                    val belowSize = messageSizes.value[belowMessage.id]
-                    val belowHeightPx = (belowSize?.height?.toFloat() ?: 50.dp.toPx())
-                    totalOffset += belowHeightPx + messageSpacing.toPx()
-                }
-                totalOffset.toDp()
-            }
-
-            val isUser = message.sender == Sender.User
-            val align = if (isUser) Alignment.BottomEnd else Alignment.BottomStart
-
-            // Click handling based on mode
-            val interaction = remember { MutableInteractionSource() }
-            val clickModifier = when (mode) {
-                is ChatOverlayMode.Peek -> {
-                    // In peek mode, bubbles consume clicks to prevent background interaction
-                    Modifier.clickable(
-                        indication = null,
-                        interactionSource = interaction
-                    ) { /* consume click */ }
-                }
-                is ChatOverlayMode.Fullscreen -> {
-                    // In fullscreen mode, bubbles don't need to consume clicks
-                    Modifier
-                }
-            }
-
-            val bubbleModifier = Modifier
-                .align(align)
-                .padding(bottom = bottomOffset)
-                .padding(end = avoidancePadding)
-                .then(clickModifier)
-                .onGloballyPositioned { coordinates ->
-                    val newSize = coordinates.size
-                    val oldSize = messageSizes.value[message.id]
-                    if (oldSize != newSize) {
-                        messageSizes.value = messageSizes.value.toMutableMap().apply {
-                            put(message.id, newSize)
-                        }
+                    is ChatOverlayMode.Fullscreen -> {
+                        // No timeout in fullscreen mode
                     }
                 }
 
-            SpeechBubble(
-                text = message.text,
-                isUser = isUser,
-                modifier = bubbleModifier
-            )
+                val isLast = index == messages.lastIndex
+                val fabIsVisible = mode is ChatOverlayMode.Peek && !imeVisible
+                val avoidancePadding by animateDpAsState(
+                    if (isLast && fabIsVisible) {
+                        fabWidthDp + 32.dp // FAB width + 16dp margins on both sides
+                    } else 0.dp,
+                    label = "fabAvoidancePadding"
+                )
+
+                val bottomOffset = with(localDensity) {
+                    var totalOffset = inputBarHeight.toPx()
+                    for (i in (index + 1) until messages.size) {
+                        val belowMessage = messages[i]
+                        val belowSize = messageSizes.value[belowMessage.id]
+                        val belowHeightPx = (belowSize?.height?.toFloat() ?: 50.dp.toPx())
+                        totalOffset += belowHeightPx + messageSpacing.toPx()
+                    }
+                    totalOffset.toDp()
+                }
+
+                val isUser = message.sender == Sender.User
+                val align = if (isUser) Alignment.BottomEnd else Alignment.BottomStart
+
+                // Click handling based on mode
+                val interaction = remember { MutableInteractionSource() }
+                val clickModifier = when (mode) {
+                    is ChatOverlayMode.Peek -> {
+                        // In peek mode, bubbles consume clicks to prevent background interaction
+                        Modifier.clickable(
+                            indication = null,
+                            interactionSource = interaction
+                        ) { /* consume click */ }
+                    }
+                    is ChatOverlayMode.Fullscreen -> {
+                        // In fullscreen mode, bubbles don't need to consume clicks
+                        Modifier
+                    }
+                }
+
+                val bubbleModifier = Modifier
+                    .align(align)
+                    .padding(bottom = bottomOffset)
+                    .padding(end = avoidancePadding)
+                    .then(clickModifier)
+                    .onGloballyPositioned { coordinates ->
+                        val newSize = coordinates.size
+                        val oldSize = messageSizes.value[message.id]
+                        if (oldSize != newSize) {
+                            messageSizes.value = messageSizes.value.toMutableMap().apply {
+                                put(message.id, newSize)
+                            }
+                        }
+                    }
+
+                SpeechBubble(
+                    text = message.text,
+                    isUser = isUser,
+                    modifier = bubbleModifier
+                )
+            }
         }
     }
-}
 
     Box(modifier = Modifier.fillMaxSize()) {
+        val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !DEBUG_FORCE_NO_BLUR_FALLBACK
+        val blurRadius by animateDpAsState(
+            targetValue = if (currentMode == AppMode.ChatFullscreen && canBlur) 16.dp else 0.dp,
+            label = "blurAnimation"
+        )
+
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
@@ -261,33 +279,38 @@ fun ChatOverlay(
             },
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
-            val unfinishedItems = state.items.filter { it.status == "OPEN" }
-            val finishedItems = state.items.filter { it.status == "DONE" }
-
-            LazyColumn(
+            Box(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
+                    .blur(radius = blurRadius)
             ) {
-                item {
-                    Text(
-                        text = "Unfinished",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-                items(unfinishedItems) { item ->
-                    TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
-                }
-                item {
-                    Text(
-                        text = "Finished",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-                items(finishedItems) { item ->
-                    TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
+                val unfinishedItems = state.items.filter { it.status == "OPEN" }
+                val finishedItems = state.items.filter { it.status == "DONE" }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    item {
+                        Text(
+                            text = "Unfinished",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    items(unfinishedItems) { item ->
+                        TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
+                    }
+                    item {
+                        Text(
+                            text = "Finished",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    items(finishedItems) { item ->
+                        TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
+                    }
                 }
             }
         }
@@ -305,7 +328,6 @@ fun ChatOverlay(
         ChatOverlay(
             messages = overlayMessages,
             imeVisible = state.imeVisible,
-            manualMode = state.manualMode,
             fabWidthDp = state.fabWidthDp,
             mode = overlayMode,
             isPinned = { message ->
