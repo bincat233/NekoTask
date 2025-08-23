@@ -75,6 +75,7 @@ sealed class UiEvent {
     data class UnpinMessage(val id: String) : UiEvent()
     // Chat overlay mode events
     data class SetChatOverlayMode(val mode: String) : UiEvent()
+    object EnterFullscreenChat : UiEvent()
 }
 
 
@@ -158,6 +159,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is UiEvent.PinMessage -> pinMessage(event.id)
             is UiEvent.UnpinMessage -> unpinMessage(event.id)
             is UiEvent.SetChatOverlayMode -> setChatOverlayMode(event.mode)
+            is UiEvent.EnterFullscreenChat -> setChatOverlayMode("fullscreen")
         }
     }
 
@@ -298,7 +300,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             sender = Sender.Assistant,
             text = "...",
             timestamp = Clock.System.now(),
-            status = MessageStatus.Sending
+            status = MessageStatus.Sending,
+            replyToId = userMessage.id // 建立关联：助理消息回复这条用户消息
         )
         addMessages(userMessage, assistantMessage)
 

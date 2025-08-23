@@ -67,9 +67,14 @@ import me.superbear.todolist.SpeechBubble
 import me.superbear.todolist.Task
 import me.superbear.todolist.MessageStatus
 
-// Temporary debug flag: force fullscreen mode
-private const val DEBUG_FORCE_FULLSCREEN = true
-private const val DEBUG_FORCE_NO_BLUR_FALLBACK = true
+// 调试开关：
+// 1) DEBUG_FORCE_FULLSCREEN  强制进入全屏聊天（便于快速验证模糊/遮罩与交互）
+// 2) DEBUG_FORCE_NO_BLUR_FALLBACK  强制走“旧设备回退路径”（不使用模糊，用深色遮罩模拟）
+private const val DEBUG_FORCE_NO_BLUR_FALLBACK = false
+// 2) DEBUG_DISABLE_PEEK_TIMEOUT  关闭 Peek 模式消息自动消失（便于调试叠层布局）
+// 3) DEBUG_PEEK_TIMEOUT_MS       覆盖 Peek 模式的自动消失时间（>0 生效；<=0 使用默认值）
+private const val DEBUG_DISABLE_PEEK_TIMEOUT = false
+private const val DEBUG_PEEK_TIMEOUT_MS: Long = -1L
 
 // Main app modes - replaces scattered boolean states
 sealed class AppMode {
@@ -88,12 +93,11 @@ sealed class ChatOverlayMode {
 @Composable
 private fun getCurrentAppMode(
     manualMode: Boolean,
-    chatOverlayMode: String,
-    debugForceFullscreen: Boolean = DEBUG_FORCE_FULLSCREEN
+    chatOverlayMode: String
 ): AppMode {
     return when {
         manualMode -> AppMode.ManualAdd
-        debugForceFullscreen || chatOverlayMode == "fullscreen" -> AppMode.ChatFullscreen
+        chatOverlayMode == "fullscreen" -> AppMode.ChatFullscreen
         else -> AppMode.Normal
     }
 }
@@ -131,30 +135,34 @@ fun MainScreen(
                 .imePadding()
                 .navigationBarsPadding()
         ) {
-            val messageSpacing = 12.dp  // fixed spacing between messages
-            val inputBarHeight = 70.dp  // baseline above input bar
+            val messageSpacing = 12.dp  // 消息之间的固定间距
+            val inputBarHeight = 70.dp  // 与 ChatInputBar 高度保持一致，作为底部基线
+            // 近似 FAB 高度：用于当最后一条消息高度过小时，保证倒数第二条能避让到 FAB 之上
+            val fabApproxHeight = 72.dp
 
             // Fullscreen mode background
             when (mode) {
                 is ChatOverlayMode.Fullscreen -> {
-                    // On modern devices, the background is blurred by the caller.
-                    // On older devices, we add a fallback scrim.
+                    // 全屏聊天时的“背景处理”
+                    // canBlur=true  -> 背景已由上层对主内容做高斯模糊
+                    // canBlur=false -> 使用深色遮罩回退方案（旧设备/强制回退时）
                     val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !DEBUG_FORCE_NO_BLUR_FALLBACK
                     if (!canBlur) {
+                        // 回退遮罩：加深背景至几乎不可见，并且“让出”输入框区域，保证输入可操作
                         Surface(
                             color = Color.Black.copy(alpha = 0.85f),
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(bottom = inputBarHeight) // Don't cover input bar
+                                .padding(bottom = inputBarHeight) // 不覆盖 ChatInputBar
                         ) {}
                     }
 
-                    // Click interceptor to prevent interaction with blurred content behind
+                    // 点击拦截层：防止背景内容被点击穿透，同样不覆盖输入框区域
                     val interaction = remember { MutableInteractionSource() }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(bottom = inputBarHeight) // Don't cover input bar
+                            .padding(bottom = inputBarHeight) // 不覆盖 ChatInputBar
                             .clickable(indication = null, interactionSource = interaction) { }
                     )
                 }
@@ -167,13 +175,14 @@ fun MainScreen(
             val messageSizes = remember { mutableStateOf(mutableMapOf<String, IntSize>()) }
 
             messages.forEachIndexed { index, message ->
-                // Auto-dismiss timeout for each message (unless pinned) - only in peek mode
+                // 自动消失仅在“Peek”模式生效；全屏模式下不计时消失
                 when (mode) {
                     is ChatOverlayMode.Peek -> {
                         val pinned = isPinned(message)
-                        if (!pinned) {
+                        if (!pinned && !DEBUG_DISABLE_PEEK_TIMEOUT) {
+                            val timeoutMs = if (DEBUG_PEEK_TIMEOUT_MS > 0) DEBUG_PEEK_TIMEOUT_MS else mode.autoDismissMs
                             LaunchedEffect(message.id, pinned) {
-                                kotlinx.coroutines.delay(mode.autoDismissMs)
+                                kotlinx.coroutines.delay(timeoutMs)
                                 onMessageTimeout(message.id)
                             }
                         }
@@ -187,7 +196,8 @@ fun MainScreen(
                 val fabIsVisible = mode is ChatOverlayMode.Peek && !imeVisible
                 val avoidancePadding by animateDpAsState(
                     if (isLast && fabIsVisible) {
-                        fabWidthDp + 32.dp // FAB width + 16dp margins on both sides
+                        // 仅在 Peek 模式且键盘未弹出时，为最后一条消息预留 FAB 避让空间
+                        fabWidthDp + 32.dp // FAB 宽度 + 两侧 16dp 外边距
                     } else 0.dp,
                     label = "fabAvoidancePadding"
                 )
@@ -197,7 +207,15 @@ fun MainScreen(
                     for (i in (index + 1) until messages.size) {
                         val belowMessage = messages[i]
                         val belowSize = messageSizes.value[belowMessage.id]
-                        val belowHeightPx = (belowSize?.height?.toFloat() ?: 50.dp.toPx())
+                        val belowHeightPxRaw = (belowSize?.height?.toFloat() ?: 50.dp.toPx())
+
+                        // 当“下方的那条”刚好是最后一条，且处于 Peek 模式并且 FAB 可见时：
+                        // 若最后一条的高度过小，则按 fabApproxHeight 计算，确保本条（倒数第二条）被顶到 FAB 之上
+                        val isBelowLast = i == messages.lastIndex
+                        val belowHeightPx = if (isBelowLast && (mode is ChatOverlayMode.Peek) && fabIsVisible) {
+                            maxOf(belowHeightPxRaw, fabApproxHeight.toPx())
+                        } else belowHeightPxRaw
+
                         totalOffset += belowHeightPx + messageSpacing.toPx()
                     }
                     totalOffset.toDp()
@@ -247,7 +265,9 @@ fun MainScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // canBlur：Android 12+(RenderEffect) 且未强制回退时启用真实模糊
         val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !DEBUG_FORCE_NO_BLUR_FALLBACK
+        // 模糊半径动画：全屏聊天时过渡到 16.dp，否则为 0
         val blurRadius by animateDpAsState(
             targetValue = if (currentMode == AppMode.ChatFullscreen && canBlur) 16.dp else 0.dp,
             label = "blurAnimation"
@@ -259,6 +279,7 @@ fun MainScreen(
                 if (currentMode != AppMode.ManualAdd) {
                     ChatInputBar(
                         onSend = { onEvent(UiEvent.SendChat(it)) },
+                        onDockClick = { onEvent(UiEvent.EnterFullscreenChat) },
                         modifier = Modifier
                             .navigationBarsPadding()// ← 没弹键盘时让出导航条
                             .imePadding()           // ← 弹出键盘时让出 IME
@@ -279,6 +300,7 @@ fun MainScreen(
             },
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
+            // 仅对“主内容区域”应用模糊，不影响底部 ChatInputBar（输入区始终清晰可交互）
             Box(
                 modifier = Modifier
                     .padding(innerPadding)
@@ -325,6 +347,11 @@ fun MainScreen(
             else -> state.peekMessages
         }
 
+        // 仅在“等待回复”期间，pin 对应的那一条用户消息：
+        // 策略：
+        // 1) 找到最新的一条 Assistant 且 status==Sending 的消息 idxA
+        // 2) 从 idxA 往前找到最近的一条 User 消息，记为 pendingUserMessageId
+
         ChatOverlay(
             messages = overlayMessages,
             imeVisible = state.imeVisible,
@@ -335,9 +362,9 @@ fun MainScreen(
                 message.id in state.pinnedMessageIds ||
                 // Auto-pin non-sent messages
                 message.status != MessageStatus.Sent ||
-                // Auto-pin user messages when assistant is still processing
+                // Auto-pin user messages that have pending assistant replies (based on replyToId association)
                 (message.sender == Sender.User && 
-                 state.peekMessages.any { it.sender == Sender.Assistant && it.status == MessageStatus.Sending })
+                 overlayMessages.any { it.sender == Sender.Assistant && it.status == MessageStatus.Sending && it.replyToId == message.id })
             },
             onMessageTimeout = { id -> onEvent(UiEvent.DismissPeekMessage(id)) }
         )

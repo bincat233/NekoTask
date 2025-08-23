@@ -17,4 +17,5 @@ data class ChatMessage(
     val text: String,
     val timestamp: Instant,
     val status: MessageStatus = MessageStatus.Sent,
+    val replyToId: String? = null, // 关联字段：助理消息回复的用户消息 ID
 )

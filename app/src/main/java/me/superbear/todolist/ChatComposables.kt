@@ -2,6 +2,7 @@ package me.superbear.todolist
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -140,6 +141,7 @@ fun CatDock(
 @Composable
 fun ChatInputBar(
     onSend: (String) -> Unit,
+    onDockClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var text by remember { mutableStateOf("") }
@@ -157,7 +159,9 @@ fun ChatInputBar(
             text = "Assistant",
             showText = false,
             size = dockSize,
-            modifier = Modifier.align(Alignment.TopStart),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .clickable { onDockClick() },
             avatarResId = R.drawable.ic_cat_dock
         )
 
