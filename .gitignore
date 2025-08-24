@@ -15,3 +15,4 @@
 local.properties
 /.idea/appInsightsSettings.xml
 /app/release/
+/.kotlin

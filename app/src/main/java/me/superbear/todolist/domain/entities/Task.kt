@@ -1,4 +1,4 @@
-package me.superbear.todolist
+package me.superbear.todolist.domain.entities
 
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
@@ -45,4 +45,3 @@ data class Task(
     val parentId: Long? = null,
     val orderInParent: Long = 0
 )
-

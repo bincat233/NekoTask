@@ -134,10 +134,10 @@ The real client sends a system prompt requiring the assistant to reply with a si
 {
   "say": "string",
   "actions": [
-    { "type": "add_task", "title": "string", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123? },
+    { "type": "add_task", "title": "string", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123 },
     { "type": "complete_task", "id": 123 },
     { "type": "delete_task", "id": 123 },
-    { "type": "update_task", "id": 123, "title": "string?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123? }
+    { "type": "update_task", "id": 123, "title": "strin?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123 }
   ]
 }
 ```

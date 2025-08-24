@@ -1,4 +1,4 @@
-package me.superbear.todolist
+package me.superbear.todolist.domain.entities
 
 import java.util.UUID
 import kotlinx.datetime.Instant

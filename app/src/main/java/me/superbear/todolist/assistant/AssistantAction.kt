@@ -1,4 +1,4 @@
-package me.superbear.todolist
+package me.superbear.todolist.assistant
 
 sealed class AssistantAction {
     data class AddTask(

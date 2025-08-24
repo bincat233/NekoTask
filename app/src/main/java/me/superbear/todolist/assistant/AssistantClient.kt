@@ -1,6 +1,6 @@
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 
-package me.superbear.todolist
+package me.superbear.todolist.assistant
 
 import android.util.Log
 import io.ktor.client.HttpClient
@@ -19,6 +19,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.random.Random
+import me.superbear.todolist.BuildConfig
+import me.superbear.todolist.domain.entities.ChatMessage
 
 interface AssistantClient {
     suspend fun send(message: String, history: List<ChatMessage>): Result<String>
@@ -26,7 +28,7 @@ interface AssistantClient {
 
 class MockAssistantClient : AssistantClient {
     private val responses = listOf(
-        "{\"say\":\"I can help. What’s the task?\",\"actions\":[]}",
+        "{\"say\":\"I can help. What's the task?\",\"actions\":[]}",
         "{\"say\":\"Added to your list.\",\"actions\":[{\"type\":\"add_task\",\"title\":\"Buy milk\",\"notes\":\"2%\"}]}"
     )
 

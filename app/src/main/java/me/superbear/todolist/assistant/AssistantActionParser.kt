@@ -1,4 +1,4 @@
-package me.superbear.todolist
+package me.superbear.todolist.assistant
 
 import android.util.Log
 import kotlinx.datetime.Clock
@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import me.superbear.todolist.domain.entities.Task
 
 class AssistantActionParser {
 

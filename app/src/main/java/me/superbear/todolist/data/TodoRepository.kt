@@ -1,14 +1,13 @@
-package me.superbear.todolist
+package me.superbear.todolist.data
 
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.datetime.Instant
+import me.superbear.todolist.domain.entities.Task
 import org.json.JSONArray
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
-
-// Task data class is defined in its own file: Task.kt
 
 /**
  * Repository for handling Task data operations.
