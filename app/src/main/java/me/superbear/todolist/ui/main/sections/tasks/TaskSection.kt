@@ -40,6 +40,8 @@ import kotlinx.datetime.toLocalDateTime
 import me.superbear.todolist.domain.entities.Task
 
 // Row model to flatten headers and parent cards at the same LazyColumn level
+// Header = section title (e.g., "Unfinished"/"Finished")
+// Parent = a single parent task card row
 private sealed class RowItem {
     data class Header(val title: String) : RowItem()
     data class Parent(val task: Task) : RowItem()
@@ -47,6 +49,7 @@ private sealed class RowItem {
 
 /**
  * Task section composable - displays task list with parent/child relationships
+ * This is the entry point used by MainScreen to render the task list area.
  */
 @Composable
 fun TaskSection(
@@ -58,7 +61,7 @@ fun TaskSection(
     getParentProgress: (parentId: Long) -> Pair<Int, Int>,
     modifier: Modifier = Modifier
 ) {
-    // Build a flat list of header and parent rows
+    // Build a flat list of header and parent rows to feed the LazyColumn
     val rows = remember(state.items) {
         buildList<RowItem> {
             add(RowItem.Header("Unfinished"))
@@ -68,6 +71,7 @@ fun TaskSection(
         }
     }
 
+    // LazyColumn = the scrollable list container for the whole task section
     LazyColumn(modifier = modifier) {
         items(
             items = rows,
@@ -79,6 +83,7 @@ fun TaskSection(
             }
         ) { item ->
             when (item) {
+                // Header row (section title)
                 is RowItem.Header -> {
                     Text(
                         text = item.title,
@@ -86,6 +91,7 @@ fun TaskSection(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
+                // Parent task card row
                 is RowItem.Parent -> {
                     val parent = item.task
                     ParentTaskCard(
@@ -111,6 +117,7 @@ private fun ParentTaskCard(
     getChildren: (parentId: Long) -> List<Task>,
     getParentProgress: (parentId: Long) -> Pair<Int, Int>
 ) {
+    // Local UI state: expansion of children and add-subtask dialog visibility
     var expanded by remember(task.id) { mutableStateOf(false) }
     var showAddDialog by remember(task.id) { mutableStateOf(false) }
     val children = remember(task.id) { getChildren(task.id) }
@@ -121,7 +128,9 @@ private fun ParentTaskCard(
         if (totalCount == 1) expanded = true
     }
 
+    // Column = the card body (header row + expandable subtasks area)
     Column(modifier = Modifier.fillMaxWidth()) {
+        // Header row of the parent task card
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -132,6 +141,7 @@ private fun ParentTaskCard(
                 checked = task.status == "DONE",
                 onCheckedChange = { onToggleParent() }
             )
+            // Title + progress badge + expand/collapse button
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -156,7 +166,7 @@ private fun ParentTaskCard(
                         )
                     }
                 }
-                // Due today indicator (minimal)
+                // Secondary line: due-today indicator (optional)
                 val dueToday = remember(task.dueAt) { isDueToday(task) }
                 if (dueToday) {
                     Text(
@@ -168,9 +178,11 @@ private fun ParentTaskCard(
             }
         }
 
+        // Expandable subtasks area (children list + add button)
         AnimatedVisibility(visible = expanded) {
             Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
                 children.forEach { child ->
+                    // One subtask row: checkbox + title
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -191,6 +203,7 @@ private fun ParentTaskCard(
                     }
                 }
 
+                // Add-subtask action
                 TextButton(onClick = { showAddDialog = true }, modifier = Modifier.padding(start = 16.dp)) {
                     Text(text = "+ Subtask")
                 }
@@ -198,6 +211,7 @@ private fun ParentTaskCard(
         }
     }
 
+    // Dialog for creating a new subtask under this parent task
     if (showAddDialog) {
         var title by remember { mutableStateOf("") }
         AlertDialog(
