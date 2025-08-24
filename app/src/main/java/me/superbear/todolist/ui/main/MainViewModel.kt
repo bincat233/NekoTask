@@ -57,7 +57,10 @@ data class UiState(
     val executeAssistantActions: Boolean = true,
     // Date time picker state
     val showDateTimePicker: Boolean = false,
-    val selectedDueDate: Long? = null // Unix timestamp in milliseconds
+    val selectedDueDate: Long? = null, // Unix timestamp in milliseconds
+    // Priority menu state
+    val showPriorityMenu: Boolean = false,
+    val selectedPriority: Priority = Priority.DEFAULT
 )
 
 // This is a sealed class that represents all possible UI events
@@ -83,6 +86,10 @@ sealed class UiEvent {
     object OpenDateTimePicker : UiEvent()
     object CloseDateTimePicker : UiEvent()
     data class SetDueDate(val timestamp: Long?) : UiEvent()
+    // Priority menu events
+    object OpenPriorityMenu : UiEvent()
+    object ClosePriorityMenu : UiEvent()
+    data class SetPriority(val priority: Priority) : UiEvent()
 }
 
 
@@ -122,7 +129,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         imeVisible = false,
         useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT,
         showDateTimePicker = false,
-        selectedDueDate = null
+        selectedDueDate = null,
+        showPriorityMenu = false,
+        selectedPriority = Priority.DEFAULT
     ))
     // uiState：只读 StateFlow。UI 侧（Compose）通过 collectAsState() 订阅它来渲染。
     // 说明：“同一个流”——asStateFlow() 只是暴露只读视图，不复制数据源。
@@ -172,6 +181,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is UiEvent.OpenDateTimePicker -> setShowDateTimePicker(true)
             is UiEvent.CloseDateTimePicker -> setShowDateTimePicker(false)
             is UiEvent.SetDueDate -> setDueDate(event.timestamp)
+            is UiEvent.OpenPriorityMenu -> setShowPriorityMenu(true)
+            is UiEvent.ClosePriorityMenu -> setShowPriorityMenu(false)
+            is UiEvent.SetPriority -> setPriority(event.priority)
         }
     }
 
@@ -208,6 +220,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(selectedDueDate = timestamp) }
     }
 
+    private fun setShowPriorityMenu(show: Boolean) {
+        _uiState.update { it.copy(showPriorityMenu = show) }
+    }
+
+    private fun setPriority(priority: Priority) {
+        _uiState.update { it.copy(selectedPriority = priority, showPriorityMenu = false) }
+    }
+
     // Task Management
     private fun handleManualAddSubmit(title: String, description: String?) {
         val currentState = _uiState.value
@@ -221,6 +241,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             notes = description,
             createdAt = Clock.System.now(),
             dueAt = dueAtInstant,
+            priority = currentState.selectedPriority,
             status = "OPEN"
         )
         addTask(newTask)
@@ -260,7 +281,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 manualTitle = "",
                 manualDesc = "",
                 selectedDueDate = null,
-                showDateTimePicker = false
+                showDateTimePicker = false,
+                showPriorityMenu = false,
+                selectedPriority = Priority.DEFAULT
             )
         }
     }

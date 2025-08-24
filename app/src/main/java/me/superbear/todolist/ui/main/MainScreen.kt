@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -35,7 +36,8 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FormatListBulleted
+// Intentionally avoid importing Icons.filled.List to prevent conflict with kotlin.collections.List
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -54,6 +56,8 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -82,6 +86,7 @@ import me.superbear.todolist.Sender
 import me.superbear.todolist.SpeechBubble
 import me.superbear.todolist.Task
 import me.superbear.todolist.MessageStatus
+import me.superbear.todolist.Priority
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -402,6 +407,14 @@ fun MainScreen(
                 onCancel = { onEvent(UiEvent.CloseManual) },
                 onDueDateClick = { onEvent(UiEvent.OpenDateTimePicker) },
                 selectedDueDate = state.selectedDueDate,
+                onPriorityClick = { onEvent(UiEvent.OpenPriorityMenu) },
+                showPriorityMenu = state.showPriorityMenu,
+                selectedPriority = state.selectedPriority,
+                onPrioritySelected = { p ->
+                    onEvent(UiEvent.SetPriority(p))
+                    onEvent(UiEvent.ClosePriorityMenu)
+                },
+                onPriorityDismiss = { onEvent(UiEvent.ClosePriorityMenu) },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -595,6 +608,11 @@ fun ManualAddCard(
     onCancel: () -> Unit,
     onDueDateClick: () -> Unit,
     selectedDueDate: Long?,
+    onPriorityClick: () -> Unit,
+    showPriorityMenu: Boolean,
+    selectedPriority: Priority,
+    onPrioritySelected: (Priority) -> Unit,
+    onPriorityDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -641,11 +659,45 @@ fun ManualAddCard(
                             tint = if (selectedDueDate != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    IconButton(onClick = { /*TODO*/ }) {
-                        Icon(Icons.Default.Flag, contentDescription = "Priority")
+                    // Priority selector
+                    Box {
+                        val priorityTint = when (selectedPriority) {
+                            Priority.HIGH -> Color(0xFFE53935)  // red
+                            Priority.MEDIUM -> Color(0xFFFFA000) // amber
+                            Priority.LOW -> Color(0xFF43A047)    // green
+                            Priority.DEFAULT -> MaterialTheme.colorScheme.onSurface
+                        }
+                        IconButton(onClick = onPriorityClick) {
+                            Icon(
+                                Icons.Default.Flag,
+                                contentDescription = "Priority",
+                                tint = priorityTint
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showPriorityMenu,
+                            onDismissRequest = onPriorityDismiss
+                        ) {
+                            DropdownMenuItem(
+                                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Flag, contentDescription = null, tint = Color(0xFFE53935)); Spacer(Modifier.width(8.dp)); Text("High") } },
+                                onClick = { onPrioritySelected(Priority.HIGH) }
+                            )
+                            DropdownMenuItem(
+                                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Flag, contentDescription = null, tint = Color(0xFFFFA000)); Spacer(Modifier.width(8.dp)); Text("Medium") } },
+                                onClick = { onPrioritySelected(Priority.MEDIUM) }
+                            )
+                            DropdownMenuItem(
+                                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Flag, contentDescription = null, tint = Color(0xFF43A047)); Spacer(Modifier.width(8.dp)); Text("Low") } },
+                                onClick = { onPrioritySelected(Priority.LOW) }
+                            )
+                            DropdownMenuItem(
+                                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Flag, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface); Spacer(Modifier.width(8.dp)); Text("None") } },
+                                onClick = { onPrioritySelected(Priority.DEFAULT) }
+                            )
+                        }
                     }
                     IconButton(onClick = { /*TODO*/ }) {
-                        Icon(Icons.Default.Folder, contentDescription = "Project")
+                        Icon(Icons.Filled.FormatListBulleted, contentDescription = "Subtasks")
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     TextButton(onClick = onCancel) {
