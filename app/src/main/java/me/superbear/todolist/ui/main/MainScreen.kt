@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Folder
@@ -45,11 +47,23 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -68,6 +82,9 @@ import me.superbear.todolist.Sender
 import me.superbear.todolist.SpeechBubble
 import me.superbear.todolist.Task
 import me.superbear.todolist.MessageStatus
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 // 调试开关：
 // 1) DEBUG_FORCE_FULLSCREEN  强制进入全屏聊天（便于快速验证模糊/遮罩与交互）
@@ -315,8 +332,13 @@ fun MainScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                    items(unfinishedItems) { item ->
-                        TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
+                    val openParents = unfinishedItems.filter { it.parentId == null }
+                    items(openParents) { parent ->
+                        ParentTaskCard(
+                            task = parent,
+                            viewModel = viewModel,
+                            onToggleParent = { onEvent(UiEvent.ToggleTask(parent)) }
+                        )
                     }
                     item {
                         Text(
@@ -325,8 +347,13 @@ fun MainScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                    items(finishedItems) { item ->
-                        TaskItem(task = item, onToggle = { onEvent(UiEvent.ToggleTask(item)) })
+                    val doneParents = finishedItems.filter { it.parentId == null }
+                    items(doneParents) { parent ->
+                        ParentTaskCard(
+                            task = parent,
+                            viewModel = viewModel,
+                            onToggleParent = { onEvent(UiEvent.ToggleTask(parent)) }
+                        )
                     }
                 }
             }
@@ -373,10 +400,157 @@ fun MainScreen(
                 onDescriptionChange = { onEvent(UiEvent.ChangeDesc(it)) },
                 onSend = { onEvent(UiEvent.ManualAddSubmit(state.manualTitle, state.manualDesc)) },
                 onCancel = { onEvent(UiEvent.CloseManual) },
+                onDueDateClick = { onEvent(UiEvent.OpenDateTimePicker) },
+                selectedDueDate = state.selectedDueDate,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+        
+        // Date Time Picker
+        if (state.showDateTimePicker) {
+            DateTimePickerCard(
+                selectedDate = state.selectedDueDate,
+                onDateTimeSelected = { timestamp ->
+                    onEvent(UiEvent.SetDueDate(timestamp))
+                    onEvent(UiEvent.CloseDateTimePicker)
+                },
+                onCancel = { onEvent(UiEvent.CloseDateTimePicker) }
+            )
+        }
     }
+}
+
+@Composable
+private fun ParentTaskCard(
+    task: Task,
+    viewModel: MainViewModel,
+    onToggleParent: () -> Unit
+) {
+    var expanded by remember(task.id) { mutableStateOf(false) }
+    var showAddDialog by remember(task.id) { mutableStateOf(false) }
+    val children = remember(task.id, viewModel.uiState.collectAsState().value.items) {
+        viewModel.getChildren(task.id)
+    }
+    val (doneCount, totalCount) = remember(task.id, viewModel.uiState.collectAsState().value.items) {
+        viewModel.getParentProgress(task.id)
+    }
+
+    // Auto-expand when first subtask created
+    LaunchedEffect(totalCount) {
+        if (totalCount == 1) expanded = true
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = task.status == "DONE",
+                onCheckedChange = { onToggleParent() }
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (task.status == "DONE") Color.Gray else Color.Unspecified,
+                        textDecoration = if (task.status == "DONE") TextDecoration.LineThrough else null,
+                        modifier = Modifier.weight(1f)
+                    )
+                    // Progress badge X/Y
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Text(
+                            text = "$doneCount/$totalCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                    IconButton(onClick = { expanded = !expanded }) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (expanded) "Collapse" else "Expand"
+                        )
+                    }
+                }
+                // Due today indicator (minimal)
+                val dueToday = remember(task.dueAt) { isDueToday(task) }
+                if (dueToday) {
+                    Text(
+                        text = "Due today",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                children.forEach { child ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = child.status == "DONE",
+                            onCheckedChange = { checked -> viewModel.toggleSubtaskDone(child.id, checked) }
+                        )
+                        Text(
+                            text = child.title,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 8.dp),
+                            color = if (child.status == "DONE") Color.Gray else Color.Unspecified,
+                            textDecoration = if (child.status == "DONE") TextDecoration.LineThrough else null
+                        )
+                    }
+                }
+
+                TextButton(onClick = { showAddDialog = true }, modifier = Modifier.padding(start = 16.dp)) {
+                    Text(text = "+ Subtask")
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        var title by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (title.isNotBlank()) {
+                        viewModel.addSubtask(task.id, title)
+                        title = ""
+                        showAddDialog = false
+                        expanded = true
+                    }
+                }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("Cancel") } },
+            title = { Text("New subtask") },
+            text = {
+                TextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    singleLine = true,
+                    placeholder = { Text("Subtask title") }
+                )
+            }
+        )
+    }
+}
+
+private fun isDueToday(task: Task): Boolean {
+    val due = task.dueAt ?: return false
+    val now = Clock.System.now()
+    val today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
+    val dueDate = due.toLocalDateTime(TimeZone.currentSystemDefault()).date
+    return dueDate == today
 }
 
 @Composable
@@ -419,6 +593,8 @@ fun ManualAddCard(
     onDescriptionChange: (String) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
+    onDueDateClick: () -> Unit,
+    selectedDueDate: Long?,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -458,8 +634,12 @@ fun ManualAddCard(
                         .heightIn(min = 80.dp)
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { /*TODO*/ }) {
-                        Icon(Icons.Default.Event, contentDescription = "Due date")
+                    IconButton(onClick = onDueDateClick) {
+                        Icon(
+                            Icons.Default.Event, 
+                            contentDescription = "Due date",
+                            tint = if (selectedDueDate != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
                     }
                     IconButton(onClick = { /*TODO*/ }) {
                         Icon(Icons.Default.Flag, contentDescription = "Priority")
@@ -540,5 +720,85 @@ fun SpeechBubblePreview() {
                     .padding(top = 60.dp)
             )
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DateTimePickerCard(
+    selectedDate: Long?,
+    onDateTimeSelected: (Long) -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDatePicker by remember { mutableStateOf(true) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    var selectedDateMillis by remember { mutableStateOf(selectedDate ?: System.currentTimeMillis()) }
+    
+    val calendar = Calendar.getInstance().apply {
+        timeInMillis = selectedDateMillis
+    }
+    
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDateMillis
+        )
+        
+        DatePickerDialog(
+            onDismissRequest = onCancel,
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { dateMillis ->
+                            selectedDateMillis = dateMillis
+                            calendar.timeInMillis = dateMillis
+                            showDatePicker = false
+                            showTimePicker = true
+                        }
+                    }
+                ) {
+                    Text("Next")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onCancel) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+    
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = calendar.get(Calendar.HOUR_OF_DAY),
+            initialMinute = calendar.get(Calendar.MINUTE)
+        )
+        
+        AlertDialog(
+            onDismissRequest = onCancel,
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                        calendar.set(Calendar.MINUTE, timePickerState.minute)
+                        calendar.set(Calendar.SECOND, 0)
+                        calendar.set(Calendar.MILLISECOND, 0)
+                        onDateTimeSelected(calendar.timeInMillis)
+                    }
+                ) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onCancel) {
+                    Text("Cancel")
+                }
+            },
+            text = {
+                TimePicker(state = timePickerState)
+            }
+        )
     }
 }

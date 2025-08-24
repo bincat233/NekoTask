@@ -29,6 +29,7 @@ enum class Priority {
  * @property origin Optional origin, e.g. "manual" / "assistant".
  * @property updatedAt Optional last updated time.
  * @property parentId Optional parent task id. Use this as the single source of truth for hierarchy.
+ * @property orderInParent Ordering within the same parent; larger values appear later. Defaults to 0.
  */
 data class Task(
     val id: Long,
@@ -41,6 +42,7 @@ data class Task(
     val aiInsights: String? = null,
     val origin: String? = null,
     val updatedAt: Instant? = null,
-    val parentId: Long? = null
+    val parentId: Long? = null,
+    val orderInParent: Long = 0
 )
 

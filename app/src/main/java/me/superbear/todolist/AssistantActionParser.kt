@@ -31,7 +31,8 @@ class AssistantActionParser {
         val notes: String? = null,
         @SerialName("dueAt")
         val dueAtIso: String? = null,
-        val priority: String? = null
+        val priority: String? = null,
+        val parentId: Long? = null
     )
 
     private val json = Json {
@@ -94,30 +95,55 @@ class AssistantActionParser {
 
     private fun mapAction(dto: ActionDto): AssistantAction? {
         return when (dto.type.lowercase()) {
-            "add_task" -> dto.title?.trim()?.takeIf { it.isNotEmpty() }?.let { t ->
-                AssistantAction.AddTask(
-                    title = t,
-                    notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
-                    dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
-                    priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() }
-                )
+            "add_task" -> {
+                val t = dto.title?.trim()?.takeIf { it.isNotEmpty() }
+                if (t == null) {
+                    Log.e("AssistantActionParser", "add_task missing required 'title': $dto")
+                    null
+                } else {
+                    AssistantAction.AddTask(
+                        title = t,
+                        notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
+                        dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
+                        priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() },
+                        parentId = dto.parentId
+                    )
+                }
             }
-            "delete_task" -> dto.id?.let { id ->
-                AssistantAction.DeleteTask(id = id)
+            "delete_task" -> {
+                val id = dto.id
+                if (id == null) {
+                    Log.e("AssistantActionParser", "delete_task missing required 'id': $dto")
+                    null
+                } else AssistantAction.DeleteTask(id = id)
             }
-            "update_task" -> dto.id?.let { id ->
-                AssistantAction.UpdateTask(
-                    id = id,
-                    title = dto.title?.trim().takeIf { !it.isNullOrEmpty() },
-                    notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
-                    dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
-                    priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() }
-                )
+            "update_task" -> {
+                val id = dto.id
+                if (id == null) {
+                    Log.e("AssistantActionParser", "update_task missing required 'id': $dto")
+                    null
+                } else {
+                    AssistantAction.UpdateTask(
+                        id = id,
+                        title = dto.title?.trim().takeIf { !it.isNullOrEmpty() },
+                        notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
+                        dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
+                        priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() },
+                        parentId = dto.parentId
+                    )
+                }
             }
-            "complete_task" -> dto.id?.let { id ->
-                AssistantAction.CompleteTask(id = id)
+            "complete_task" -> {
+                val id = dto.id
+                if (id == null) {
+                    Log.e("AssistantActionParser", "complete_task missing required 'id': $dto")
+                    null
+                } else AssistantAction.CompleteTask(id = id)
             }
-            else -> null
+            else -> {
+                Log.e("AssistantActionParser", "Unknown action type: '${dto.type}' in $dto")
+                null
+            }
         }
     }
 

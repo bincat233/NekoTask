@@ -271,12 +271,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * @return the newly created Task instance
      */
     fun addSubtask(parentId: Long, title: String): Task {
+        val nextOrder = (getChildren(parentId).map { it.orderInParent }.maxOrNull() ?: -1L) + 1L
         val newTask = Task(
             id = System.currentTimeMillis(),
             title = title,
             createdAt = Clock.System.now(),
             status = "OPEN",
-            parentId = parentId
+            parentId = parentId,
+            orderInParent = nextOrder
         )
         _uiState.update { state ->
             state.copy(items = listOf(newTask) + state.items)
@@ -311,13 +313,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Get children of a parent, ordered by createdAt ascending.
+     * Get children of a parent, ordered by orderInParent ascending (fallback to createdAt).
      */
     fun getChildren(parentId: Long): List<Task> {
         return uiState.value.items
             .asSequence()
             .filter { it.parentId == parentId }
-            .sortedBy { it.createdAt }
+            .sortedWith(compareBy<Task> { it.orderInParent }.thenBy { it.createdAt })
             .toList()
     }
 
@@ -465,16 +467,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun executeAssistantAction(action: AssistantAction) {
         when (action) {
             is AssistantAction.AddTask -> {
-                val newTask = Task(
-                    id = System.currentTimeMillis(),
-                    title = action.title,
-                    notes = action.notes,
-                    dueAt = parseToInstant(action.dueAtIso),
-                    priority = mapPriority(action.priority),
-                    status = "OPEN",
-                    createdAt = Clock.System.now()
-                )
-                addTask(newTask)
+                if (action.parentId != null) {
+                    // Route to subtask creation as requested; minimal API uses only title
+                    addSubtask(action.parentId, action.title)
+                } else {
+                    val newTask = Task(
+                        id = System.currentTimeMillis(),
+                        title = action.title,
+                        notes = action.notes,
+                        dueAt = parseToInstant(action.dueAtIso),
+                        priority = mapPriority(action.priority),
+                        status = "OPEN",
+                        createdAt = Clock.System.now()
+                    )
+                    addTask(newTask)
+                }
             }
             is AssistantAction.DeleteTask -> {
                 deleteTask(action.id)
@@ -482,12 +489,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is AssistantAction.UpdateTask -> {
                 val taskToUpdate = _uiState.value.items.find { it.id == action.id }
                 if (taskToUpdate != null) {
-                    val updatedTask = taskToUpdate.copy(
+                    var updatedTask = taskToUpdate.copy(
                         title = action.title ?: taskToUpdate.title,
                         notes = action.notes ?: taskToUpdate.notes,
                         dueAt = action.dueAtIso?.let { parseToInstant(it) } ?: taskToUpdate.dueAt,
                         priority = action.priority?.let { mapPriority(it) } ?: taskToUpdate.priority
                     )
+                    // Reparent if a non-null parentId is provided
+                    if (action.parentId != null && action.parentId != taskToUpdate.parentId) {
+                        val newParentId = action.parentId
+                        val nextOrder = (newParentId?.let { getChildren(it).map { c -> c.orderInParent }.maxOrNull() } ?: -1L) + 1L
+                        updatedTask = updatedTask.copy(parentId = newParentId, orderInParent = nextOrder)
+                    }
                     updateTask(updatedTask)
                 } else {
                     Log.w("MainViewModel", "Could not find task with id ${action.id} to update")

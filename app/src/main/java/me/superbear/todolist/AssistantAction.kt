@@ -5,7 +5,8 @@ sealed class AssistantAction {
         val title: String,
         val notes: String? = null,
         val dueAtIso: String? = null,
-        val priority: String? = null
+        val priority: String? = null,
+        val parentId: Long? = null
     ) : AssistantAction()
 
     data class DeleteTask(
@@ -17,7 +18,8 @@ sealed class AssistantAction {
         val title: String? = null,
         val notes: String? = null,
         val dueAtIso: String? = null,
-        val priority: String? = null
+        val priority: String? = null,
+        val parentId: Long? = null
     ) : AssistantAction()
 
     data class CompleteTask(
