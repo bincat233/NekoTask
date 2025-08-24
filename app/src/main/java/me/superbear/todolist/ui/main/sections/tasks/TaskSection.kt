@@ -39,6 +39,12 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import me.superbear.todolist.domain.entities.Task
 
+// Row model to flatten headers and parent cards at the same LazyColumn level
+private sealed class RowItem {
+    data class Header(val title: String) : RowItem()
+    data class Parent(val task: Task) : RowItem()
+}
+
 /**
  * Task section composable - displays task list with parent/child relationships
  */
@@ -52,42 +58,46 @@ fun TaskSection(
     getParentProgress: (parentId: Long) -> Pair<Int, Int>,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        modifier = modifier
-    ) {
-        item {
-            Text(
-                text = "Unfinished",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
+    // Build a flat list of header and parent rows
+    val rows = remember(state.items) {
+        buildList<RowItem> {
+            add(RowItem.Header("Unfinished"))
+            state.openParents.forEach { add(RowItem.Parent(it)) }
+            add(RowItem.Header("Finished"))
+            state.doneParents.forEach { add(RowItem.Parent(it)) }
         }
-        items(state.openParents, key = { it.id }) { parent ->
-            ParentTaskCard(
-                task = parent,
-                onToggleParent = { onToggleTask(parent) },
-                onAddSubtask = onAddSubtask,
-                onToggleSubtask = onToggleSubtask,
-                getChildren = getChildren,
-                getParentProgress = getParentProgress
-            )
-        }
-        item {
-            Text(
-                text = "Finished",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-        }
-        items(state.doneParents, key = { it.id }) { parent ->
-            ParentTaskCard(
-                task = parent,
-                onToggleParent = { onToggleTask(parent) },
-                onAddSubtask = onAddSubtask,
-                onToggleSubtask = onToggleSubtask,
-                getChildren = getChildren,
-                getParentProgress = getParentProgress
-            )
+    }
+
+    LazyColumn(modifier = modifier) {
+        items(
+            items = rows,
+            key = { item ->
+                when (item) {
+                    is RowItem.Header -> "header_${item.title}"
+                    is RowItem.Parent -> item.task.id
+                }
+            }
+        ) { item ->
+            when (item) {
+                is RowItem.Header -> {
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+                is RowItem.Parent -> {
+                    val parent = item.task
+                    ParentTaskCard(
+                        task = parent,
+                        onToggleParent = { onToggleTask(parent) },
+                        onAddSubtask = onAddSubtask,
+                        onToggleSubtask = onToggleSubtask,
+                        getChildren = getChildren,
+                        getParentProgress = getParentProgress
+                    )
+                }
+            }
         }
     }
 }
