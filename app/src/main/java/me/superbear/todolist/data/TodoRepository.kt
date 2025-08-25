@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.Clock
 import me.superbear.todolist.data.model.AppDatabase
+import me.superbear.todolist.data.model.TaskEntity
 import me.superbear.todolist.data.model.toDomain
 import me.superbear.todolist.data.model.toEntity
 import me.superbear.todolist.domain.entities.Task
@@ -148,6 +149,143 @@ class TodoRepository(private val context: Context) {
             } catch (e: Exception) {
                 Log.e("TodoRepository", "Failed to delete task: $id", e)
             }
+        }
+    }
+
+    // Order maintenance operations (internal API)
+
+    /**
+     * Adds a new task before a target task with proper order management.
+     * Uses transaction to ensure atomic order shifting and insertion.
+     * 
+     * @param targetId ID of the task to insert before
+     * @param title Title of the new task
+     * @param content Optional content for the new task
+     * @param priority Priority of the new task
+     */
+    fun addTaskBefore(
+        targetId: Long, 
+        title: String, 
+        content: String? = null,
+        priority: me.superbear.todolist.domain.entities.Priority = me.superbear.todolist.domain.entities.Priority.DEFAULT
+    ) {
+        repositoryScope.launch {
+            try {
+                // Step 1: Get target task info
+                val targetTask = database.taskDao().getTaskById(targetId)
+                if (targetTask == null) {
+                    Log.w("TodoRepository", "Target task not found for addTaskBefore: $targetId")
+                    return@launch
+                }
+
+                // Step 2: Shift existing tasks to make space
+                val shiftedRows = database.taskDao().bulkShiftOrders(
+                    parentId = targetTask.parentId,
+                    fromInclusive = targetTask.orderInParent,
+                    delta = 1L
+                )
+
+                // Step 3: Insert new task at target's original position
+                val now = Clock.System.now()
+                val newId = System.currentTimeMillis()
+                
+                val newTask = Task(
+                    id = newId,
+                    title = title,
+                    content = content,
+                    status = TaskStatus.OPEN,
+                    priority = priority,
+                    parentId = targetTask.parentId,
+                    createdAt = now,
+                    updatedAt = now,
+                    orderInParent = targetTask.orderInParent
+                )
+
+                val rowId = database.taskDao().insert(newTask.toEntity())
+                Log.d("TodoRepository", "Added task before $targetId: $title (shifted $shiftedRows tasks, rowId: $rowId)")
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to add task before $targetId: $title", e)
+            }
+        }
+    }
+
+    /**
+     * Reorders a task to a new position within its parent.
+     * Handles sibling reindexing if necessary to maintain consecutive ordering.
+     * 
+     * @param taskId ID of the task to reorder
+     * @param newOrder New order position (0-based)
+     */
+    fun reorder(taskId: Long, newOrder: Long) {
+        repositoryScope.launch {
+            try {
+                // Get the task to reorder
+                val task = database.taskDao().getTaskById(taskId)
+                if (task == null) {
+                    Log.w("TodoRepository", "Task not found for reorder: $taskId")
+                    return@launch
+                }
+
+                val currentOrder = task.orderInParent
+                if (currentOrder == newOrder) {
+                    Log.d("TodoRepository", "Task $taskId already at order $newOrder, no change needed")
+                    return@launch
+                }
+
+                // Get all siblings for reindexing
+                val siblings = database.taskDao().getSiblings(task.parentId)
+                val sortedSiblings = siblings.sortedBy { it.orderInParent }
+
+                // Remove the task from its current position
+                val mutableSiblings = sortedSiblings.toMutableList()
+                val taskIndex = mutableSiblings.indexOfFirst { it.id == taskId }
+                if (taskIndex == -1) {
+                    Log.w("TodoRepository", "Task not found in siblings list: $taskId")
+                    return@launch
+                }
+
+                val taskToMove = mutableSiblings.removeAt(taskIndex)
+
+                // Insert at new position (clamped to valid range)
+                val clampedNewOrder = newOrder.coerceIn(0L, mutableSiblings.size.toLong())
+                mutableSiblings.add(clampedNewOrder.toInt(), taskToMove)
+
+                // Update all siblings with consecutive order values
+                mutableSiblings.forEachIndexed { index, sibling ->
+                    if (sibling.orderInParent != index.toLong()) {
+                        database.taskDao().updateOrder(sibling.id, index.toLong(), sibling.parentId)
+                    }
+                }
+
+                Log.d("TodoRepository", "Reordered task $taskId from $currentOrder to $clampedNewOrder")
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to reorder task $taskId to $newOrder", e)
+            }
+        }
+    }
+
+    /**
+     * Reindexes all siblings within a parent to have consecutive order values.
+     * Useful for cleaning up gaps after deletions or bulk operations.
+     * 
+     * @param parentId Parent task ID (null for root-level tasks)
+     */
+    private suspend fun reindexSiblings(parentId: Long?) {
+        try {
+            val siblings = database.taskDao().getSiblings(parentId)
+            val sortedSiblings = siblings.sortedWith(
+                compareBy<TaskEntity> { it.orderInParent }.thenBy { it.createdAt }
+            )
+
+            sortedSiblings.forEachIndexed { index, sibling ->
+                if (sibling.orderInParent != index.toLong()) {
+                    database.taskDao().updateOrder(sibling.id, index.toLong(), parentId)
+                }
+            }
+
+            Log.d("TodoRepository", "Reindexed ${sortedSiblings.size} siblings for parent $parentId")
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to reindex siblings for parent $parentId", e)
         }
     }
 

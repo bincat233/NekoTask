@@ -161,6 +161,50 @@ interface TaskDao {
         return insert(taskWithOrder)
     }
 
+    // Order maintenance operations
+
+    /**
+     * Updates the order of a specific task.
+     * 
+     * @param id Task ID to update
+     * @param newOrder New order value
+     * @param parentId Parent ID for validation (optional)
+     * @return Number of rows updated
+     */
+    @Query("UPDATE tasks SET order_in_parent = :newOrder WHERE id = :id AND (:parentId IS NULL OR parent_id = :parentId)")
+    suspend fun updateOrder(id: Long, newOrder: Long, parentId: Long? = null): Int
+
+    /**
+     * Bulk shifts order values for tasks within a parent.
+     * Used to make space for insertions or handle deletions.
+     * 
+     * @param parentId Parent task ID (null for root-level tasks)
+     * @param fromInclusive Starting order value (inclusive)
+     * @param delta Amount to shift (+1 to make space, -1 to close gaps)
+     * @return Number of rows updated
+     */
+    @Query("UPDATE tasks SET order_in_parent = order_in_parent + :delta WHERE parent_id = :parentId AND order_in_parent >= :fromInclusive")
+    suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long): Int
+
+    /**
+     * Gets a task by its ID for ordering operations.
+     * 
+     * @param id Task ID
+     * @return TaskEntity or null if not found
+     */
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    suspend fun getTaskById(id: Long): TaskEntity?
+
+    /**
+     * Gets all siblings of a parent ordered by their current order.
+     * Used by Repository for reindexing operations.
+     * 
+     * @param parentId Parent task ID (null for root-level tasks)
+     * @return List of sibling tasks ordered by order_in_parent, then created_at
+     */
+    @Query("SELECT * FROM tasks WHERE parent_id = :parentId ORDER BY order_in_parent ASC, created_at ASC")
+    suspend fun getSiblings(parentId: Long?): List<TaskEntity>
+
     // Legacy method name for backward compatibility
     suspend fun insertTask(task: TaskEntity): Long = insert(task)
 }
