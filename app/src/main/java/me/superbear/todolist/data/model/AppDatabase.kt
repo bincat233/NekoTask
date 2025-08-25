@@ -36,4 +36,9 @@ abstract class AppDatabase : RoomDatabase() {
      * @return TaskDao instance for performing CRUD operations on tasks
      */
     abstract fun taskDao(): TaskDao
+
+    /**
+     * Provides access to ordering and reparenting transactional operations.
+     */
+    abstract fun taskOrderOpsDao(): TaskOrderOpsDao
 }

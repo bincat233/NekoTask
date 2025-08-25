@@ -70,21 +70,18 @@ class AssistantController(
     ) {
         when (action) {
             is AssistantAction.AddTask -> {
-                if (action.parentId != null) {
-                    // Route to subtask creation
-                    hooks.addSubtask(action.parentId, action.title)
-                } else {
-                    val newTask = Task(
-                        id = null,
-                        title = action.title,
-                        content = action.content,
-                        dueAt = parseToInstant(action.dueAtIso),
-                        priority = mapPriority(action.priority),
-                        status = TaskStatus.OPEN,
-                        createdAt = now
-                    )
-                    hooks.addTask(newTask)
-                }
+                // Unify task and subtask creation: always create Task with optional parentId
+                val newTask = Task(
+                    id = null,
+                    title = action.title,
+                    content = action.content,
+                    dueAt = parseToInstant(action.dueAtIso),
+                    priority = mapPriority(action.priority),
+                    status = TaskStatus.OPEN,
+                    createdAt = now,
+                    parentId = action.parentId
+                )
+                hooks.addTask(newTask)
             }
             is AssistantAction.DeleteTask -> {
                 hooks.deleteTask(action.id)
@@ -98,12 +95,11 @@ class AssistantController(
                         dueAt = action.dueAtIso?.let { parseToInstant(it) } ?: currentTask.dueAt,
                         priority = action.priority?.let { mapPriority(it) } ?: currentTask.priority
                     )
-                    // Reparent if a non-null parentId is provided
+                    // Reparent via repository transactional API instead of computing order here
                     if (action.parentId != null && action.parentId != currentTask.parentId) {
-                        val newParentId = action.parentId
-                        val nextOrder = (newParentId?.let { hooks.getChildren(it).map { c -> c.orderInParent }.maxOrNull() } ?: -1L) + 1L
-                        updatedTask = updatedTask.copy(parentId = newParentId, orderInParent = nextOrder)
+                        hooks.moveTaskToParent(currentTask.id!!, action.parentId, action.orderInParent)
                     }
+                    // Update other fields
                     hooks.updateTask(updatedTask)
                 } else {
                     Log.w("AssistantController", "Could not find task with id ${action.id} to update")
@@ -150,7 +146,7 @@ interface AssistantActionHooks {
     suspend fun addTask(task: Task)
     suspend fun updateTask(task: Task)
     suspend fun deleteTask(taskId: Long)
-    suspend fun addSubtask(parentId: Long, title: String): Task
+    suspend fun moveTaskToParent(taskId: Long, newParentId: Long?, newIndex: Long?)
     suspend fun getTask(taskId: Long): Task?
     suspend fun getChildren(parentId: Long): List<Task>
 }

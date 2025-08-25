@@ -29,7 +29,6 @@ import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityReducer
-import me.superbear.todolist.ui.main.sections.tasks.TaskReducer
 import me.superbear.todolist.ui.main.state.AppEvent
 import me.superbear.todolist.ui.main.state.AppState
 
@@ -68,14 +67,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadTasks() {
         viewModelScope.launch {
-            // 观察 Repository 的任务变化，通过 TaskReducer 更新状态
-            // 这样保持了架构的一致性，避免 MainViewModel 过于臃肿
+            // 显示加载中
+            _appState.update { s -> s.copy(taskState = s.taskState.copy(isLoading = true)) }
+            // 观察 Repository 的任务变化，直接写入 UI 状态（DB 为唯一数据源）
             todoRepository.tasks.collect { tasks ->
                 _appState.update { currentState ->
                     currentState.copy(
-                        taskState = TaskReducer.reduce(
-                            currentState.taskState,
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.TasksLoaded(tasks)
+                        taskState = currentState.taskState.copy(
+                            items = tasks,
+                            isLoading = false
                         )
                     )
                 }
@@ -111,27 +111,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleTaskEvent(event: me.superbear.todolist.ui.main.sections.tasks.TaskEvent) {
         when (event) {
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Toggle -> {
-                toggleTaskWithOptimisticUpdate(event.task)
+                toggleTaskPersist(event.task)
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Add -> {
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(currentState.taskState, event)
+                // Persist add to DB; rely on Room Flow to update UI
+                viewModelScope.launch {
+                    val t = event.task
+                    todoRepository.addTask(
+                        title = t.title,
+                        parentId = t.parentId,
+                        content = t.content,
+                        priority = t.priority,
+                        dueAt = t.dueAt,
+                        status = t.status
                     )
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Update -> {
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(currentState.taskState, event)
-                    )
+                // Persist update to DB; rely on Room Flow to update UI
+                val t = event.task
+                val id = t.id
+                if (id != null) {
+                    viewModelScope.launch {
+                        todoRepository.updateTask(
+                            id = id,
+                            title = t.title,
+                            content = t.content,
+                            priority = t.priority,
+                            dueAt = t.dueAt
+                        )
+                    }
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Delete -> {
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(currentState.taskState, event)
-                    )
+                // Persist delete to DB; rely on Room Flow to update UI
+                viewModelScope.launch {
+                    todoRepository.deleteTask(event.taskId)
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.AddSubtask -> {
@@ -144,9 +159,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 loadTasks()
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.TasksLoaded -> {
+                // 直接更新 UI 状态
                 _appState.update { currentState ->
                     currentState.copy(
-                        taskState = TaskReducer.reduce(currentState.taskState, event)
+                        taskState = currentState.taskState.copy(
+                            items = event.tasks,
+                            isLoading = false
+                        )
                     )
                 }
             }
@@ -199,86 +218,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Task Management with Side Effects
-    private fun toggleTaskWithOptimisticUpdate(task: Task) {
-        val originalStatus = task.status
-        val newStatus = if (originalStatus == TaskStatus.OPEN) TaskStatus.DONE else TaskStatus.OPEN
-        val updatedTask = task.copy(status = newStatus)
-
-        // Optimistic update
-        _appState.update { currentState ->
-            currentState.copy(
-                taskState = TaskReducer.reduce(
-                    currentState.taskState,
-                    me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Update(updatedTask)
-                )
-            )
-        }
-
-        // Server update with revert on failure
+    // Task Management: persist first, UI listens to DB Flow
+    private fun toggleTaskPersist(task: Task) {
+        val newDone = task.status == TaskStatus.OPEN
+        val id = task.id ?: return
         viewModelScope.launch {
-            val success = todoRepository.updateTaskOnServer(updatedTask)
-            if (!success) {
-                // Revert on failure
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(
-                            currentState.taskState,
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Update(task)
-                        )
-                    )
-                }
-            }
+            todoRepository.toggleTaskStatus(id, newDone)
         }
     }
 
-    private fun handleAddSubtask(parentId: Long, title: String): Task {
-        // Delegate creation to repository (Room auto-generates the ID and order)
-        todoRepository.addTask(title = title, parentId = parentId)
-        // Return the most recently created child as a best-effort approximation
-        val children = getChildren(parentId)
-        return children.maxByOrNull { it.createdAt } ?: Task(
-            id = null,
-            title = title,
-            createdAt = Clock.System.now(),
-            status = TaskStatus.OPEN,
-            parentId = parentId
-        )
-    }
 
-    private fun toggleSubtaskWithOptimisticUpdate(childId: Long, done: Boolean) {
-        val current = _appState.value.taskState.items.find { it.id == childId }
-        if (current == null) {
-            Log.w("MainViewModel", "toggleSubtaskDone: task $childId not found")
-            return
-        }
-        val updated = current.copy(status = if (done) TaskStatus.DONE else TaskStatus.OPEN)
-
-        // Optimistic update
-        _appState.update { currentState ->
-            currentState.copy(
-                taskState = TaskReducer.reduce(
-                    currentState.taskState,
-                    me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Update(updated)
-                )
-            )
-        }
-
-        // Server update with revert on failure
-        viewModelScope.launch {
-            val success = todoRepository.updateTaskOnServer(updated)
-            if (!success) {
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(
-                            currentState.taskState,
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Update(current)
-                        )
-                    )
-                }
-            }
-        }
-    }
+    // Removed obsolete optimistic subtask toggle; DB is the single source of truth.
 
     private fun handleManualAddSubmit(title: String, description: String?) {
         val currentState = _appState.value
@@ -287,11 +237,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Add minimal task to database; Room will auto-generate the ID.
-        // For now we only persist the title to avoid guessing the generated ID.
-        // Follow-up enhancements can extend repository to accept description/priority/dueAt.
+        // 现在一并持久化描述/优先级/截止时间。
         viewModelScope.launch {
             try {
-                todoRepository.addTask(title = title, parentId = null)
+                todoRepository.addTask(
+                    title = title,
+                    parentId = null,
+                    content = description,
+                    priority = currentState.priorityState.selectedPriority,
+                    dueAt = dueAtInstant
+                )
                 Log.d("MainViewModel", "Task added successfully: $title")
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to add task: $title", e)
@@ -432,55 +387,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun createAssistantActionHooks(): AssistantActionHooks {
         return object : AssistantActionHooks {
             override suspend fun addTask(task: Task) {
-                // Persist via repository; UI updates through Room Flow
-                todoRepository.addTask(title = task.title, parentId = task.parentId)
+                // Persist via repository with full fields; UI updates through Room Flow
+                todoRepository.addTask(
+                    title = task.title,
+                    parentId = task.parentId,
+                    content = task.content,
+                    priority = task.priority,
+                    dueAt = task.dueAt,
+                    status = task.status
+                )
             }
 
             override suspend fun updateTask(task: Task) {
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(
-                            currentState.taskState,
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Update(task)
-                        )
-                    )
-                }
+                val id = task.id ?: return
+                todoRepository.updateTask(
+                    id = id,
+                    title = task.title,
+                    content = task.content,
+                    priority = task.priority,
+                    dueAt = task.dueAt
+                )
             }
 
             override suspend fun deleteTask(taskId: Long) {
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(
-                            currentState.taskState,
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Delete(taskId)
-                        )
-                    )
-                }
+                todoRepository.deleteTask(taskId)
             }
 
-            override suspend fun addSubtask(parentId: Long, title: String): Task {
-                todoRepository.addTask(title, parentId)
-                // Return the newly created task (we need to find it in the repository)
-                val children = todoRepository.getChildren(parentId)
-                return children.maxByOrNull { it.createdAt } ?: throw IllegalStateException("Failed to create subtask")
+            override suspend fun moveTaskToParent(taskId: Long, newParentId: Long?, newIndex: Long?) {
+                todoRepository.moveTaskToParent(taskId, newParentId, newIndex)
             }
 
             override suspend fun getTask(taskId: Long): Task? {
-                return _appState.value.taskState.items.find { it.id == taskId }
+                return todoRepository.getTaskById(taskId)
             }
 
             override suspend fun getChildren(parentId: Long): List<Task> {
-                return todoRepository.getChildren(parentId)
+                return todoRepository.getChildrenFromDb(parentId)
             }
         }
     }
 
     // Utility methods for task relationships - delegate to repository
     fun getChildren(parentId: Long): List<Task> {
-        return todoRepository.getChildren(parentId)
+        return todoRepository.getChildrenFromFlow(parentId)
     }
 
     fun getParentProgress(parentId: Long): Pair<Int, Int> {
-        return todoRepository.getParentProgress(parentId)
+        return todoRepository.getParentProgressFromFlow(parentId)
     }
 }

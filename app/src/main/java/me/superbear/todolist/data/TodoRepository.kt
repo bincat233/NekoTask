@@ -23,9 +23,6 @@ import me.superbear.todolist.data.model.toEntity
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
 import me.superbear.todolist.domain.entities.Priority
-import org.json.JSONArray
-import java.io.InputStream
-import java.nio.charset.StandardCharsets
 
 /**
  * Repository for handling Task data operations.
@@ -52,6 +49,18 @@ class TodoRepository(private val context: Context) {
             builder.fallbackToDestructiveMigration(false)
         }
         builder.build()
+    }
+
+    /**
+     * Fetch a single task by id from the database (fresh read).
+     */
+    suspend fun getTaskById(id: Long): Task? {
+        return try {
+            database.taskDao().getTaskById(id)?.toDomain()
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to get task by id: $id", e)
+            null
+        }
     }
 
     // Repository scope for background operations
@@ -125,7 +134,8 @@ class TodoRepository(private val context: Context) {
     ) {
         repositoryScope.launch {
             try {
-                val currentTask = _tasksStateFlow.value.find { it.id == id }
+                // Fetch fresh from DB to avoid stale UI state
+                val currentTask = getTaskById(id)
                 if (currentTask != null) {
                     val updatedTask = currentTask.copy(
                         title = title ?: currentTask.title,
@@ -158,9 +168,19 @@ class TodoRepository(private val context: Context) {
     fun deleteTask(id: Long) {
         repositoryScope.launch {
             try {
+                // Fetch parent info first for reindex
+                val task = database.taskDao().getTaskById(id)
+                val parentId = task?.parentId
+
                 val rowsDeleted = database.taskDao().deleteById(id)
                 if (rowsDeleted > 0) {
-                    Log.d("TodoRepository", "Deleted task: $id")
+                    // Reindex remaining siblings to keep 0..n-1
+                    try {
+                        database.taskOrderOpsDao().reindexParent(parentId)
+                    } catch (e: Exception) {
+                        Log.e("TodoRepository", "Failed to reindex after delete for parent=$parentId", e)
+                    }
+                    Log.d("TodoRepository", "Deleted task: $id and reindexed siblings of parent=$parentId")
                 } else {
                     Log.w("TodoRepository", "Task not found for deletion: $id")
                 }
@@ -252,6 +272,21 @@ class TodoRepository(private val context: Context) {
     }
 
     /**
+     * Move a task to a new parent, optionally to a specific index, atomically.
+     * If newIndex is null, it will be appended to the end of the new parent.
+     */
+    fun moveTaskToParent(taskId: Long, newParentId: Long?, newIndex: Long? = null) {
+        repositoryScope.launch {
+            try {
+                database.taskOrderOpsDao().moveToParent(taskId, newParentId, newIndex)
+                Log.d("TodoRepository", "Moved task $taskId to parent=$newParentId at index=${newIndex ?: "end"}")
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to move task $taskId to parent=$newParentId at index=$newIndex", e)
+            }
+        }
+    }
+
+    /**
      * Reindexes all siblings within a parent to have consecutive order values.
      * Useful for cleaning up gaps after deletions or bulk operations.
      * 
@@ -298,26 +333,31 @@ class TodoRepository(private val context: Context) {
     }
 
     /**
-     * Get all child tasks for a given parent task ID
+     * Get all child tasks for a given parent task ID (UI-friendly, in-memory snapshot).
      */
-    fun getChildren(parentId: Long): List<Task> {
+    fun getChildrenFromFlow(parentId: Long): List<Task> {
         return _tasksStateFlow.value.filter { it.parentId == parentId }
     }
-    
+
     /**
-     * Observe child tasks for a given parent task ID (Room-based)
+     * DB-backed fetch of children for a given parent (null = top-level).
+     * Prefer this for correctness in non-UI paths.
      */
-    fun observeChildren(parentId: Long): Flow<List<Task>> {
-        return database.taskDao().observeChildren(parentId).map { entities ->
-            entities.toDomain()
+    suspend fun getChildrenFromDb(parentId: Long?): List<Task> {
+        return try {
+            database.taskDao().getSiblings(parentId).toDomain()
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to get children from DB for parent=$parentId", e)
+            emptyList()
         }
     }
+
 
     /**
      * Get progress information (done count, total count) for a parent task
      */
-    fun getParentProgress(parentId: Long): Pair<Int, Int> {
-        val children = getChildren(parentId)
+    fun getParentProgressFromFlow(parentId: Long): Pair<Int, Int> {
+        val children = getChildrenFromFlow(parentId)
         val doneCount = children.count { it.status == TaskStatus.DONE }
         return Pair(doneCount, children.size)
     }
@@ -329,7 +369,14 @@ class TodoRepository(private val context: Context) {
      * @param title The title of the new task
      * @param parentId Optional parent ID for creating subtasks
      */
-    fun addTask(title: String, parentId: Long? = null) {
+    fun addTask(
+        title: String,
+        parentId: Long? = null,
+        content: String? = null,
+        priority: Priority = Priority.DEFAULT,
+        dueAt: Instant? = null,
+        status: TaskStatus = TaskStatus.OPEN
+    ) {
         repositoryScope.launch {
             try {
                 val now = Clock.System.now()
@@ -337,9 +384,11 @@ class TodoRepository(private val context: Context) {
                 val newTask = Task(
                     id = null,
                     title = title,
-                    status = TaskStatus.OPEN,
+                    content = content,
+                    status = status,
+                    priority = priority,
                     parentId = parentId,
-                    dueAt = null,
+                    dueAt = dueAt,
                     createdAt = now,
                     updatedAt = now,
                     orderInParent = 0 // Will be computed by addTaskWithOrdering

@@ -38,7 +38,11 @@ interface TaskDao {
      * @param parentId Parent task ID (null for root-level tasks)
      * @return Flow of child tasks ordered by order_in_parent, then created_at
      */
-    @Query("SELECT * FROM tasks WHERE parent_id = :parentId ORDER BY order_in_parent ASC, created_at ASC")
+    @Query("""
+        SELECT * FROM tasks 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+        ORDER BY order_in_parent ASC, created_at ASC
+    """)
     fun observeChildren(parentId: Long?): Flow<List<TaskEntity>>
 
     /**
@@ -47,7 +51,10 @@ interface TaskDao {
      * @param parentId Parent task ID (null for root-level tasks)
      * @return Maximum order_in_parent value, or null if no children exist
      */
-    @Query("SELECT MAX(order_in_parent) FROM tasks WHERE parent_id = :parentId")
+    @Query("""
+        SELECT MAX(order_in_parent) FROM tasks 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+    """)
     fun getMaxOrderInParent(parentId: Long?): Long?
 
     /**
@@ -242,7 +249,11 @@ interface TaskDao {
      * @param parentId Parent task ID (null for root-level tasks)
      * @return List of sibling tasks ordered by order_in_parent, then created_at
      */
-    @Query("SELECT * FROM tasks WHERE parent_id = :parentId ORDER BY order_in_parent ASC, created_at ASC")
+    @Query("""
+        SELECT * FROM tasks 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+        ORDER BY order_in_parent ASC, created_at ASC
+    """)
     suspend fun getSiblings(parentId: Long?): List<TaskEntity>
 
     // ========================================
@@ -342,7 +353,10 @@ interface TaskDao {
      * @param parentId Parent task ID (null for root-level tasks)
      * @return Flow of unfinished child tasks
      */
-    @Query("SELECT * FROM unfinished_tasks WHERE parent_id = :parentId")
+    @Query("""
+        SELECT * FROM unfinished_tasks 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+    """)
     fun observeUnfinishedChildren(parentId: Long?): Flow<List<UnfinishedTasksView>>
 
     /**
@@ -359,9 +373,99 @@ interface TaskDao {
      * @param parentId Parent task ID
      * @return Count of unfinished children
      */
-    @Query("SELECT COUNT(*) FROM unfinished_tasks WHERE parent_id = :parentId")
-    suspend fun countUnfinishedChildren(parentId: Long): Int
+    @Query("""
+        SELECT COUNT(*) FROM unfinished_tasks 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+    """)
+    suspend fun countUnfinishedChildren(parentId: Long?): Int
 
     // Legacy method name for backward compatibility
     suspend fun insertTask(task: TaskEntity): Long = insert(task)
+}
+
+// =============================
+// Additional transactional helpers for ordering & reparenting
+// =============================
+
+@Dao
+interface TaskOrderOpsDao {
+    /**
+     * Internal helper to update both parent_id and order_in_parent in one statement.
+     */
+    @Query("UPDATE tasks SET parent_id = :newParentId, order_in_parent = :newOrder WHERE id = :taskId")
+    suspend fun updateParentAndOrder(taskId: Long, newParentId: Long?, newOrder: Long): Int
+
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    suspend fun getTaskById(id: Long): TaskEntity?
+
+    @Query("""
+        SELECT * FROM tasks 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+        ORDER BY order_in_parent ASC, created_at ASC
+    """)
+    suspend fun getSiblings(parentId: Long?): List<TaskEntity>
+
+    @Query("""
+        UPDATE tasks 
+        SET order_in_parent = order_in_parent + :delta 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+        AND order_in_parent >= :fromInclusive
+    """)
+    suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long): Int
+
+    @Transaction
+    suspend fun reindexParent(parentId: Long?) {
+        val siblings = getSiblings(parentId)
+        siblings.forEachIndexed { index, s ->
+            if (s.orderInParent != index.toLong()) {
+                // Only update when value changes to reduce writes
+                updateOrderInternal(s.id, index.toLong())
+            }
+        }
+    }
+
+    @Query("UPDATE tasks SET order_in_parent = :newOrder WHERE id = :id")
+    suspend fun updateOrderInternal(id: Long, newOrder: Long): Int
+
+    /**
+     * Moves a task to a new parent, optionally to a specific index, atomically.
+     * If newIndex is null, appends to end.
+     */
+    @Transaction
+    suspend fun moveToParent(taskId: Long, newParentId: Long?, newIndex: Long?) {
+        val task = getTaskById(taskId) ?: return
+        val oldParentId = task.parentId
+        val oldOrder = task.orderInParent
+
+        if (oldParentId == newParentId) {
+            // Same parent: if index provided, just reorder within parent using reindex algorithm
+            val siblings = getSiblings(newParentId)
+            val currentIndex = siblings.indexOfFirst { it.id == taskId }
+            if (currentIndex == -1) return
+            val mutable = siblings.toMutableList()
+            val item = mutable.removeAt(currentIndex)
+            val insertAt = newIndex?.coerceIn(0L, mutable.size.toLong())?.toInt() ?: mutable.size
+            mutable.add(insertAt, item)
+            mutable.forEachIndexed { idx, s ->
+                if (s.orderInParent != idx.toLong()) updateOrderInternal(s.id, idx.toLong())
+            }
+            return
+        }
+
+        // 1) Close gap in old parent (shift down from oldOrder+1)
+        bulkShiftOrders(oldParentId, oldOrder + 1L, -1L)
+
+        // 2) Decide insert position in new parent
+        val newSiblings = getSiblings(newParentId)
+        val insertAt = newIndex?.coerceIn(0L, newSiblings.size.toLong())
+            ?: newSiblings.size.toLong() // append
+
+        // 3) Make space in new parent if inserting not at end
+        if (insertAt < newSiblings.size.toLong()) {
+            bulkShiftOrders(newParentId, insertAt, 1L)
+        }
+
+        // 4) Update the task's parent and order
+        updateParentAndOrder(taskId, newParentId, insertAt)
+    }
 }

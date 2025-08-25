@@ -110,10 +110,16 @@ fun MainScreen(
                             ))
                         },
                         onDockClick = { 
-                            // 进入全屏聊天
-                            onEvent(AppEvent.ChatOverlay(
-                                me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.EnterFullscreenChat
-                            ))
+                            // 切换聊天模式：若已在全屏则返回 Peek，否则进入全屏
+                            if (state.chatOverlayState.chatOverlayMode == "fullscreen") {
+                                onEvent(AppEvent.ChatOverlay(
+                                    me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.SetChatOverlayMode("peek")
+                                ))
+                            } else {
+                                onEvent(AppEvent.ChatOverlay(
+                                    me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.EnterFullscreenChat
+                                ))
+                            }
                         },
                         modifier = Modifier
                             .navigationBarsPadding()

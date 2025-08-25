@@ -145,7 +145,7 @@ private fun ParentTaskCard(
     }
 
     // Column = the card body (header row + expandable subtasks area)
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp)) {
         // Header row of the parent task card
         Row(
             modifier = Modifier
