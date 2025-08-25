@@ -103,13 +103,17 @@ fun TaskSection(
                 // Parent task card row
                 is RowItem.Parent -> {
                     val parent = item.task
+                    val children = getChildren(parent.id)
+                    val (doneCount, totalCount) = getParentProgress(parent.id)
                     ParentTaskCard(
                         task = parent,
+                        children = children,
+                        doneCount = doneCount,
+                        totalCount = totalCount,
                         onToggleParent = { onToggleTask(parent) },
                         onAddSubtask = onAddSubtask,
                         onToggleSubtask = onToggleSubtask,
-                        getChildren = getChildren,
-                        getParentProgress = getParentProgress
+                        
                     )
                 }
             }
@@ -121,19 +125,17 @@ fun TaskSection(
 @Composable
 private fun ParentTaskCard(
     task: Task,
+    children: List<Task>,
+    doneCount: Int,
+    totalCount: Int,
     onToggleParent: () -> Unit,
     onAddSubtask: (parentId: Long, title: String) -> Unit,
     onToggleSubtask: (childId: Long, done: Boolean) -> Unit,
-    getChildren: (parentId: Long) -> List<Task>,
-    getParentProgress: (parentId: Long) -> Pair<Int, Int>
+    
 ) {
     // Local UI state: expansion of children and add-subtask dialog visibility
     var expanded by remember(task.id) { mutableStateOf(false) }
     var showAddDialog by remember(task.id) { mutableStateOf(false) }
-    
-    // Get children dynamically - don't cache with remember since children can change
-    val children = getChildren(task.id)
-    val (doneCount, totalCount) = getParentProgress(task.id)
     
     val haptics = LocalHapticFeedback.current
 
