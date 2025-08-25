@@ -138,5 +138,21 @@
     "createdAtIso": "2024-01-03T21:00:00Z",
     "notes": "Night patrol duty.",
     "status": "OPEN"
+  },
+  {
+    "id": 21,
+    "title": "Find the perfect spot",
+    "createdAtIso": "2024-01-03T21:05:00Z",
+    "notes": "Check all windowsills.",
+    "status": "OPEN",
+    "parentId": 20
+  },
+  {
+    "id": 22,
+    "title": "Clean whiskers first",
+    "createdAtIso": "2024-01-03T21:10:00Z",
+    "notes": "Must look presentable.",
+    "status": "DONE",
+    "parentId": 20
   }
 ]

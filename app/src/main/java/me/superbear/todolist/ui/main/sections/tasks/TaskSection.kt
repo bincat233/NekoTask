@@ -1,5 +1,6 @@
 package me.superbear.todolist.ui.main.sections.tasks
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -129,8 +130,11 @@ private fun ParentTaskCard(
     // Local UI state: expansion of children and add-subtask dialog visibility
     var expanded by remember(task.id) { mutableStateOf(false) }
     var showAddDialog by remember(task.id) { mutableStateOf(false) }
-    val children = remember(task.id) { getChildren(task.id) }
-    val (doneCount, totalCount) = remember(task.id) { getParentProgress(task.id) }
+    
+    // Get children dynamically - don't cache with remember since children can change
+    val children = getChildren(task.id)
+    val (doneCount, totalCount) = getParentProgress(task.id)
+    
     val haptics = LocalHapticFeedback.current
 
     // Auto-expand when first subtask created

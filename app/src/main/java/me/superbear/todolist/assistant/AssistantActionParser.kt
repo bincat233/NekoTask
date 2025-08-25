@@ -6,6 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -167,26 +168,24 @@ class AssistantActionParser {
 object TaskStateSnapshotBuilder {
     fun build(tasks: List<Task>, maxUnfinished: Int = 20, maxFinished: Int = 20): String {
         val now = Clock.System.now().toString()
-        val unfinishedTasks = tasks.filter { it.status != TaskStatus.DONE }
-        val finishedTasks = tasks.filter { it.status == TaskStatus.DONE }
+        
+        // Build hierarchical structure
+        val childrenByParentId = tasks.groupBy { it.parentId }
+        val rootTasks = childrenByParentId[null] ?: emptyList()
+        
+        // Separate unfinished and finished root tasks
+        val unfinishedRoots = rootTasks.filter { it.status != TaskStatus.DONE }
+        val finishedRoots = rootTasks.filter { it.status == TaskStatus.DONE }
 
         val unfinishedJson = buildJsonArray {
-            unfinishedTasks.take(maxUnfinished).forEach { task ->
-                add(buildJsonObject {
-                    put("id", task.id)
-                    put("title", task.title.take(100)) // Trim title
-                    task.dueAt?.let { put("dueAt", it.toString()) }
-                    put("priority", task.priority.name)
-                })
+            unfinishedRoots.take(maxUnfinished).forEach { task ->
+                add(buildTaskWithChildren(task, childrenByParentId, includeAllFields = true))
             }
         }
 
         val finishedJson = buildJsonArray {
-            finishedTasks.take(maxFinished).forEach { task ->
-                add(buildJsonObject {
-                    put("id", task.id)
-                    put("title", task.title.take(100))
-                })
+            finishedRoots.take(maxFinished).forEach { task ->
+                add(buildTaskWithChildren(task, childrenByParentId, includeAllFields = false))
             }
         }
 
@@ -194,8 +193,41 @@ object TaskStateSnapshotBuilder {
             put("now", now)
             put("unfinished", unfinishedJson)
             put("finished", finishedJson)
-            put("finished_count", finishedTasks.size)
+            put("finished_count", finishedRoots.size)
         }
         return root.toString()
+    }
+    
+    private fun buildTaskWithChildren(
+        task: Task, 
+        childrenByParentId: Map<Long?, List<Task>>,
+        includeAllFields: Boolean
+    ): JsonObject {
+        val children = childrenByParentId[task.id] ?: emptyList()
+        val doneChildren = children.count { it.status == TaskStatus.DONE }
+        
+        return buildJsonObject {
+            put("id", task.id)
+            put("title", task.title.take(100))
+            put("status", task.status.name)
+            
+            if (includeAllFields) {
+                task.dueAt?.let { put("dueAt", it.toString()) }
+                put("priority", task.priority.name)
+                task.notes?.let { put("notes", it.take(200)) }
+            }
+            
+            // Add children recursively
+            if (children.isNotEmpty()) {
+                put("children", buildJsonArray {
+                    children.forEach { child ->
+                        add(buildTaskWithChildren(child, childrenByParentId, includeAllFields))
+                    }
+                })
+                put("totalChildren", children.size)
+                put("doneChildren", doneChildren)
+                put("progress", if (children.isNotEmpty()) doneChildren.toDouble() / children.size else 0.0)
+            }
+        }
     }
 }

@@ -137,12 +137,49 @@ The real client sends a system prompt requiring the assistant to reply with a si
     { "type": "add_task", "title": "string", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123 },
     { "type": "complete_task", "id": 123 },
     { "type": "delete_task", "id": 123 },
-    { "type": "update_task", "id": 123, "title": "strin?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123 }
+    { "type": "update_task", "id": 123, "title": "string?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123 }
   ]
 }
 ```
 
 Responses are parsed and mapped to app actions. Mock and real clients are both supported.
+
+### CURRENT_TODO_STATE (Nested)
+The app also sends a nested snapshot of current tasks as a system message. Structure:
+
+```json
+{
+  "now": "ISO-8601",
+  "unfinished": [
+    {
+      "id": 1,
+      "title": "Parent Task",
+      "status": "OPEN",
+      "priority": "HIGH",
+      "dueAt": "2025-08-25T10:00:00Z",
+      "children": [
+        { "id": 2, "title": "Child A", "status": "DONE" },
+        { "id": 3, "title": "Child B", "status": "OPEN" }
+      ],
+      "totalChildren": 2,
+      "doneChildren": 1,
+      "progress": 0.5
+    }
+  ],
+  "finished": [
+    { "id": 4, "title": "Completed Parent", "status": "DONE", "children": [] }
+  ],
+  "finished_count": 1
+}
+```
+
+Rules for the assistant (enforced via the system prompt):
+- Use ids from CURRENT_TODO_STATE at any depth (top-level or nested children).
+- `complete_task`: only for items in the "unfinished" tree (any depth).
+- `delete_task`: allowed for any item in either tree.
+- `add_task`: provide `parentId` to create a subtask; omit to create a top-level task.
+- `update_task`: include `parentId` to reparent under another existing taskd.
+- If ambiguous, ask a clarifying question in `say` and return `"actions": []`.
 
 Note actions (for working-memory notes) extend the same `actions` array without changing the envelope:
 

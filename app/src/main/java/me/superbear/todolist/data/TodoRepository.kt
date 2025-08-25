@@ -36,6 +36,7 @@ class TodoRepository(private val context: Context) {
      */
     private fun loadInitialData() {
         _tasks.value = getTasksFromJson("todolist_items.json")
+        
     }
 
     /**
@@ -73,7 +74,8 @@ class TodoRepository(private val context: Context) {
                         "DONE" -> TaskStatus.DONE
                         "OPEN" -> TaskStatus.OPEN
                         else -> TaskStatus.OPEN // 默认为 OPEN
-                    }
+                    },
+                    parentId = if (itemJson.has("parentId")) itemJson.getLong("parentId") else null
                 )
             }
         } catch (e: Exception) {
