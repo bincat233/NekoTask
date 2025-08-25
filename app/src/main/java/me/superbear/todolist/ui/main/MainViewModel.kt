@@ -304,14 +304,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             status = TaskStatus.OPEN
         )
         
-        // Add task
-        _appState.update { state ->
-            state.copy(
-                taskState = TaskReducer.reduce(
-                    state.taskState,
-                    me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Add(newTask)
-                )
-            )
+        // Add task to database (this will automatically update UI via Room Flow)
+        viewModelScope.launch {
+            try {
+                // Create a simplified task for the repository
+                todoRepository.addTask(title = title, parentId = null)
+                
+                // Update any additional fields if needed
+                if (description != null || dueAtInstant != null || currentState.priorityState.selectedPriority != Priority.DEFAULT) {
+                    // Find the newly created task and update it with additional details
+                    val newTaskId = System.currentTimeMillis() // This should match the ID used in addTask
+                    todoRepository.updateTask(
+                        id = newTaskId,
+                        content = description,
+                        priority = currentState.priorityState.selectedPriority,
+                        dueAt = dueAtInstant
+                    )
+                }
+                
+                Log.d("MainViewModel", "Task added successfully: $title")
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to add task: $title", e)
+            }
         }
         
         // Reset manual add form

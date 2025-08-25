@@ -13,14 +13,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.datetime.Instant
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.data.model.AppDatabase
 import me.superbear.todolist.data.model.TaskEntity
 import me.superbear.todolist.data.model.toDomain
 import me.superbear.todolist.data.model.toEntity
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
+import me.superbear.todolist.domain.entities.Priority
 import org.json.JSONArray
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
@@ -34,16 +36,18 @@ import java.nio.charset.StandardCharsets
  */
 class TodoRepository(private val context: Context) {
 
-    // Room database instance
-    private val database: AppDatabase = Room.databaseBuilder(
-        context.applicationContext,
-        AppDatabase::class.java,
-        "todolist_database"
-    ).build()
-
     // Seeding manager for initial data population
     private val seedManager = SeedManager(context)
-    
+
+    // Room database instance, initialized lazily
+    private val database: AppDatabase by lazy {
+        Room.databaseBuilder(
+            context.applicationContext,
+            AppDatabase::class.java,
+            "todolist_database"
+        ).build()
+    }
+
     // Repository scope for background operations
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -57,9 +61,17 @@ class TodoRepository(private val context: Context) {
     val tasksStateFlow: StateFlow<List<Task>> = _tasksStateFlow.asStateFlow()
 
     init {
+        // IMPORTANT: Delete database BEFORE lazy initialization if flag is set
+        if (BuildConfig.FORCE_DELETE_DB) {
+            Log.w("TodoRepository", "FORCE_DELETE_DB is true, deleting database.")
+            context.deleteDatabase("todolist_database")
+            // Also reset the seeding flag so database will be re-seeded
+            seedManager.resetSeedingFlagForTesting()
+        }
+
         // Initialize database and perform seeding if needed
         initializeDatabase()
-        
+
         // Bridge Room Flow to StateFlow for legacy compatibility
         repositoryScope.launch {
             tasks.collect { taskList ->
@@ -102,8 +114,8 @@ class TodoRepository(private val context: Context) {
         id: Long,
         title: String? = null,
         content: String? = null,
-        priority: me.superbear.todolist.domain.entities.Priority? = null,
-        dueAt: kotlinx.datetime.Instant? = null
+        priority: Priority? = null,
+        dueAt: Instant? = null
     ) {
         repositoryScope.launch {
             try {
@@ -167,7 +179,7 @@ class TodoRepository(private val context: Context) {
         targetId: Long, 
         title: String, 
         content: String? = null,
-        priority: me.superbear.todolist.domain.entities.Priority = me.superbear.todolist.domain.entities.Priority.DEFAULT
+        priority: Priority = Priority.DEFAULT
     ) {
         repositoryScope.launch {
             try {

@@ -48,7 +48,7 @@ interface TaskDao {
      * @return Maximum order_in_parent value, or null if no children exist
      */
     @Query("SELECT MAX(order_in_parent) FROM tasks WHERE parent_id = :parentId")
-    fun getMaxOrderInParent(parentId: Long?): Int?
+    fun getMaxOrderInParent(parentId: Long?): Long?
 
     /**
      * Observes only unfinished (OPEN) tasks with hierarchical ordering.
@@ -183,7 +183,12 @@ interface TaskDao {
      * @param delta Amount to shift (+1 to make space, -1 to close gaps)
      * @return Number of rows updated
      */
-    @Query("UPDATE tasks SET order_in_parent = order_in_parent + :delta WHERE parent_id = :parentId AND order_in_parent >= :fromInclusive")
+    @Query("""
+        UPDATE tasks 
+        SET order_in_parent = order_in_parent + :delta 
+        WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
+        AND order_in_parent >= :fromInclusive
+    """)
     suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long): Int
 
     /**

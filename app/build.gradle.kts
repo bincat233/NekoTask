@@ -46,6 +46,7 @@ android {
         debug {
             buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY")}\"")
             buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
+            buildConfigField("boolean", "FORCE_DELETE_DB", "false")
         }
     }
     compileOptions {
@@ -63,6 +64,7 @@ android {
 dependencies {
     val room_version = "2.7.2"
     implementation("androidx.room:room-runtime:${room_version}")
+    implementation("androidx.room:room-ktx:${room_version}")
     ksp("androidx.room:room-compiler:$room_version")
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")

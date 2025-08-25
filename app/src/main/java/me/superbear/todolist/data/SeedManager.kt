@@ -55,6 +55,14 @@ class SeedManager(private val context: Context) {
     }
 
     /**
+     * Resets the seeding flag to allow re-seeding.
+     * Used when database is deleted via FORCE_DELETE_DB flag.
+     */
+    fun resetSeedingFlag() {
+        prefs.edit().putBoolean(SEED_DONE_KEY, false).apply()
+    }
+
+    /**
      * Seeds the database from JSON assets.
      * 
      * Reads the JSON file, converts to TaskEntity objects, and inserts
@@ -109,7 +117,7 @@ class SeedManager(private val context: Context) {
      * Resets the seeding flag for testing purposes.
      * Should only be used in debug/test scenarios.
      */
-    fun resetSeedingFlag() {
+    fun resetSeedingFlagForTesting() {
         prefs.edit().remove(SEED_DONE_KEY).apply()
     }
 }
