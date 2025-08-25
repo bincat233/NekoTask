@@ -205,6 +205,123 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE parent_id = :parentId ORDER BY order_in_parent ASC, created_at ASC")
     suspend fun getSiblings(parentId: Long?): List<TaskEntity>
 
+    // ========================================
+    // Convenience Queries for Parent Progress and Nested Fetch
+    // ========================================
+
+    /**
+     * Observes a parent task with all its children using Room's @Relation.
+     * This is more efficient than separate queries for parent and children.
+     * 
+     * @param parentId The parent task ID
+     * @return Flow of TaskWithChildren containing parent and all children
+     */
+    @Transaction
+    @Query("SELECT * FROM tasks WHERE id = :parentId")
+    fun observeParentWithChildren(parentId: Long): Flow<TaskWithChildren?>
+
+    /**
+     * Gets a parent task with all its children as a one-time fetch.
+     * 
+     * @param parentId The parent task ID
+     * @return TaskWithChildren containing parent and all children, or null if parent not found
+     */
+    @Transaction
+    @Query("SELECT * FROM tasks WHERE id = :parentId")
+    suspend fun getParentWithChildren(parentId: Long): TaskWithChildren?
+
+    /**
+     * Counts the number of completed children for a given parent.
+     * Useful for progress tracking and completion statistics.
+     * 
+     * @param parentId The parent task ID
+     * @return Number of children with DONE status
+     */
+    @Query("""
+        SELECT COUNT(*) FROM tasks 
+        WHERE parent_id = :parentId AND status = 'DONE'
+    """)
+    suspend fun countChildrenDone(parentId: Long): Int
+
+    /**
+     * Counts the total number of children for a given parent.
+     * 
+     * @param parentId The parent task ID
+     * @return Total number of children
+     */
+    @Query("""
+        SELECT COUNT(*) FROM tasks 
+        WHERE parent_id = :parentId
+    """)
+    suspend fun countTotalChildren(parentId: Long): Int
+
+    /**
+     * Gets progress information for a parent task as a pair (done, total).
+     * This is a convenience method that combines the two count queries.
+     * 
+     * @param parentId The parent task ID
+     * @return Pair of (completed children count, total children count)
+     */
+    suspend fun getParentProgress(parentId: Long): Pair<Int, Int> {
+        val doneCount = countChildrenDone(parentId)
+        val totalCount = countTotalChildren(parentId)
+        return doneCount to totalCount
+    }
+
+    /**
+     * Observes all parent tasks that have children, along with their children.
+     * Useful for displaying parent tasks with progress indicators.
+     * 
+     * @return Flow of list of TaskWithChildren for all parents that have children
+     */
+    @Transaction
+    @Query("""
+        SELECT * FROM tasks 
+        WHERE id IN (SELECT DISTINCT parent_id FROM tasks WHERE parent_id IS NOT NULL)
+        ORDER BY order_in_parent ASC, created_at ASC
+    """)
+    fun observeAllParentsWithChildren(): Flow<List<TaskWithChildren>>
+
+    // ========================================
+    // SQLite VIEW Queries for Performance
+    // ========================================
+
+    /**
+     * Observes unfinished tasks using the pre-filtered unfinished_tasks VIEW.
+     * More efficient than the regular observeUnfinished() method as filtering
+     * is done at the database level through the VIEW.
+     * 
+     * @return Flow of unfinished tasks with hierarchical ordering
+     */
+    @Query("SELECT * FROM unfinished_tasks")
+    fun observeUnfinishedFromView(): Flow<List<UnfinishedTasksView>>
+
+    /**
+     * Gets unfinished children of a specific parent using the VIEW.
+     * 
+     * @param parentId Parent task ID (null for root-level tasks)
+     * @return Flow of unfinished child tasks
+     */
+    @Query("SELECT * FROM unfinished_tasks WHERE parent_id = :parentId")
+    fun observeUnfinishedChildren(parentId: Long?): Flow<List<UnfinishedTasksView>>
+
+    /**
+     * Counts unfinished tasks using the VIEW for better performance.
+     * 
+     * @return Total count of unfinished tasks
+     */
+    @Query("SELECT COUNT(*) FROM unfinished_tasks")
+    suspend fun countUnfinishedTasks(): Int
+
+    /**
+     * Counts unfinished children for a specific parent using the VIEW.
+     * 
+     * @param parentId Parent task ID
+     * @return Count of unfinished children
+     */
+    @Query("SELECT COUNT(*) FROM unfinished_tasks WHERE parent_id = :parentId")
+    suspend fun countUnfinishedChildren(parentId: Long): Int
+
     // Legacy method name for backward compatibility
     suspend fun insertTask(task: TaskEntity): Long = insert(task)
 }

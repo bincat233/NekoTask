@@ -11,15 +11,24 @@ import androidx.room.RoomDatabase
  * 
  * Database configuration:
  * - entities: [TaskEntity] - defines the tables in the database
+ * - views: [UnfinishedTasksView] - SQLite VIEWs for common filtering operations
  * - version: 1 - database schema version for migrations
  * - exportSchema: false - disables schema export (no schema location configured)
+ * 
+ * Views included:
+ * - unfinished_tasks: Pre-filtered view of tasks with OPEN status for performance
  * 
  * Usage:
  * - Extend RoomDatabase to leverage Room's code generation
  * - Provide abstract methods for each DAO
  * - Room generates the implementation automatically
  */
-@Database(entities = [TaskEntity::class], version = 1, exportSchema = false)
+@Database(
+    entities = [TaskEntity::class], 
+    views = [UnfinishedTasksView::class],
+    version = 1, 
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     /**
      * Provides access to task-related database operations.
