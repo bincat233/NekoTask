@@ -28,18 +28,6 @@ class SeedManager(private val context: Context) {
         private const val JSON_ASSET_FILE = "todolist_items.json"
     }
 
-    /**
-     * JSON data class matching the asset file structure.
-     */
-    @Serializable
-    private data class JsonTask(
-        val id: Long,
-        val title: String,
-        val createdAtIso: String,
-        val notes: String? = null,
-        val status: String,
-        val parentId: Long? = null
-    )
 
     /**
      * Checks if the database needs seeding.
@@ -71,46 +59,91 @@ class SeedManager(private val context: Context) {
      * @param database AppDatabase instance
      * @param context Android context for asset access
      */
-    suspend fun seedFromAssets(database: AppDatabase, context: Context) {
-        try {
-            // Read and parse JSON from assets
-            val jsonString = context.assets.open(JSON_ASSET_FILE).use { inputStream ->
-                inputStream.bufferedReader().use { it.readText() }
-            }
-            
-            val jsonTasks = Json.decodeFromString<List<JsonTask>>(jsonString)
-            
-            // Convert to TaskEntity objects
-            val taskEntities = jsonTasks.map { jsonTask ->
-                TaskEntity(
-                    id = jsonTask.id,
-                    title = jsonTask.title,
-                    content = jsonTask.notes,
-                    status = when (jsonTask.status) {
-                        "OPEN" -> TaskStatus.OPEN
-                        "DONE" -> TaskStatus.DONE
-                        else -> TaskStatus.OPEN // Default fallback
-                    },
-                    priority = Priority.DEFAULT, // JSON doesn't have priority, use default
-                    createdAt = Instant.parse(jsonTask.createdAtIso).toEpochMilliseconds(),
-                    updatedAt = null,
-                    dueAt = null,
-                    parentId = jsonTask.parentId,
-                    orderInParent = 0 // JSON doesn't have order, use default
-                )
-            }
-            
-            // Seed the database in a transaction
-            database.taskDao().seedTasks(taskEntities)
-            
-            // Mark seeding as complete
-            prefs.edit().putBoolean(SEED_DONE_KEY, true).apply()
-            
-        } catch (e: Exception) {
-            // Log error but don't crash the app
-            android.util.Log.e("SeedManager", "Failed to seed database from assets", e)
-            throw e
-        }
+
+    /**
+     * Seeds the database with hardcoded sample data (bypassing JSON assets).
+     * This is useful for quick local testing without maintaining asset files.
+     */
+    suspend fun seedWithSampleData(database: AppDatabase) {
+        // Use a fixed base timestamp for deterministic ordering
+        val base = Instant.parse("2024-01-01T00:00:00Z").toEpochMilliseconds()
+
+        val dao = database.taskDao()
+
+        // Root-level tasks
+        val inboxId = dao.insert(
+            TaskEntity(
+                title = "Have Breakfast",
+                content = "Egg and toast",
+                status = TaskStatus.OPEN,
+                priority = Priority.DEFAULT,
+                createdAt = base + 0,
+                updatedAt = null,
+                dueAt = null,
+                parentId = null,
+                orderInParent = 0
+            )
+        )
+
+        val readingId = dao.insert(
+            TaskEntity(
+                title = "Reading time",
+                content = null,
+                status = TaskStatus.OPEN,
+                priority = Priority.DEFAULT,
+                createdAt = base + 1,
+                updatedAt = null,
+                dueAt = null,
+                parentId = null,
+                orderInParent = 1
+            )
+        )
+
+        // Children of "读书"
+        val kotlinInActionId = dao.insert(
+            TaskEntity(
+                title = "Read Kotlin in Action",
+                content = null,
+                status = TaskStatus.OPEN,
+                priority = Priority.DEFAULT,
+                createdAt = base + 2,
+                updatedAt = null,
+                dueAt = base + 2 + 24 * 60 * 60 * 1000,
+                parentId = readingId,
+                orderInParent = 0
+            )
+        )
+
+        dao.insert(
+            TaskEntity(
+                title = "Write a blog post",
+                content = null,
+                status = TaskStatus.OPEN,
+                priority = Priority.DEFAULT,
+                createdAt = base + 3,
+                updatedAt = null,
+                dueAt = null,
+                parentId = readingId,
+                orderInParent = 1
+            )
+        )
+
+        dao.insert(
+            TaskEntity(
+                title = "Sleep",
+                content = null,
+                status = TaskStatus.DONE,
+                priority = Priority.DEFAULT,
+                createdAt = base - 24 * 60 * 60 * 1000,
+                updatedAt = null,
+                dueAt = null,
+                parentId = null,
+                orderInParent = 2
+            )
+        )
+
+
+        prefs.edit().putBoolean(SEED_DONE_KEY, true).apply()
     }
 
     /**

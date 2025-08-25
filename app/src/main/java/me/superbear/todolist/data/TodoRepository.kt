@@ -41,13 +41,17 @@ class TodoRepository(private val context: Context) {
 
     // Room database instance, initialized lazily
     private val database: AppDatabase by lazy {
-        Room.databaseBuilder(
+        val builder = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "todolist_database"
         )
-            .fallbackToDestructiveMigration()
-            .build()
+        if (BuildConfig.DEBUG) {
+            // Safer for development; consider explicit migrations for release builds
+            // false = drop only Room-managed tables (matches previous default behavior)
+            builder.fallbackToDestructiveMigration(false)
+        }
+        builder.build()
     }
 
     // Repository scope for background operations
@@ -90,9 +94,9 @@ class TodoRepository(private val context: Context) {
         repositoryScope.launch {
             try {
                 if (seedManager.needsSeeding(database)) {
-                    Log.d("TodoRepository", "Database empty, seeding from JSON assets...")
-                    seedManager.seedFromAssets(database, context)
-                    Log.d("TodoRepository", "Database seeding completed successfully")
+                    Log.d("TodoRepository", "Database empty, seeding with built-in sample data (bypassing JSON)...")
+                    seedManager.seedWithSampleData(database)
+                    Log.d("TodoRepository", "Database sample seeding completed successfully")
                 } else {
                     Log.d("TodoRepository", "Database already seeded, skipping")
                 }
@@ -232,45 +236,15 @@ class TodoRepository(private val context: Context) {
     fun reorder(taskId: Long, newOrder: Long) {
         repositoryScope.launch {
             try {
-                // Get the task to reorder
+                // Fetch parentId first to target the correct sibling scope
                 val task = database.taskDao().getTaskById(taskId)
                 if (task == null) {
                     Log.w("TodoRepository", "Task not found for reorder: $taskId")
                     return@launch
                 }
 
-                val currentOrder = task.orderInParent
-                if (currentOrder == newOrder) {
-                    Log.d("TodoRepository", "Task $taskId already at order $newOrder, no change needed")
-                    return@launch
-                }
-
-                // Get all siblings for reindexing
-                val siblings = database.taskDao().getSiblings(task.parentId)
-                val sortedSiblings = siblings.sortedBy { it.orderInParent }
-
-                // Remove the task from its current position
-                val mutableSiblings = sortedSiblings.toMutableList()
-                val taskIndex = mutableSiblings.indexOfFirst { it.id == taskId }
-                if (taskIndex == -1) {
-                    Log.w("TodoRepository", "Task not found in siblings list: $taskId")
-                    return@launch
-                }
-
-                val taskToMove = mutableSiblings.removeAt(taskIndex)
-
-                // Insert at new position (clamped to valid range)
-                val clampedNewOrder = newOrder.coerceIn(0L, mutableSiblings.size.toLong())
-                mutableSiblings.add(clampedNewOrder.toInt(), taskToMove)
-
-                // Update all siblings with consecutive order values
-                mutableSiblings.forEachIndexed { index, sibling ->
-                    if (sibling.orderInParent != index.toLong()) {
-                        database.taskDao().updateOrder(sibling.id, index.toLong(), sibling.parentId)
-                    }
-                }
-
-                Log.d("TodoRepository", "Reordered task $taskId from $currentOrder to $clampedNewOrder")
+                database.taskDao().reorderWithinParent(task.parentId, taskId, newOrder)
+                Log.d("TodoRepository", "Reordered task $taskId within parent ${task.parentId} to $newOrder (atomic)")
             } catch (e: Exception) {
                 Log.e("TodoRepository", "Failed to reorder task $taskId to $newOrder", e)
             }

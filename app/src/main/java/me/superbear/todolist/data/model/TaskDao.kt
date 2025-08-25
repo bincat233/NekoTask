@@ -192,6 +192,41 @@ interface TaskDao {
     suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long): Int
 
     /**
+     * Reorders a task within its parent atomically.
+     * Reads siblings, moves the task to the new position, and writes back
+     * consecutive order values in a single transaction to avoid partial updates.
+     *
+     * @param parentId Parent task ID (null for root-level tasks)
+     * @param taskId ID of the task to move
+     * @param newOrder New order position (0-based)
+     */
+    @Transaction
+    suspend fun reorderWithinParent(parentId: Long?, taskId: Long, newOrder: Long) {
+        // Fetch siblings ordered by order_in_parent then created_at for stable ordering
+        val siblings = getSiblings(parentId).sortedWith(
+            compareBy<TaskEntity> { it.orderInParent }.thenBy { it.createdAt }
+        )
+
+        if (siblings.isEmpty()) return
+
+        val currentIndex = siblings.indexOfFirst { it.id == taskId }
+        if (currentIndex == -1) return
+
+        val mutable = siblings.toMutableList()
+        val taskToMove = mutable.removeAt(currentIndex)
+
+        val clampedNew = newOrder.coerceIn(0L, mutable.size.toLong()).toInt()
+        mutable.add(clampedNew, taskToMove)
+
+        // Persist consecutive order values
+        mutable.forEachIndexed { index, sibling ->
+            if (sibling.orderInParent != index.toLong()) {
+                updateOrder(sibling.id, index.toLong(), parentId)
+            }
+        }
+    }
+
+    /**
      * Gets a task by its ID for ordering operations.
      * 
      * @param id Task ID
