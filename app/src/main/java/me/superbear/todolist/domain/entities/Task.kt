@@ -30,7 +30,7 @@ enum class TaskStatus {
  * @property id Unique identifier (Long). Used to find/update/delete a task.
  * @property title Title (required, short text).
  * @property createdAt Creation time (UTC timestamp, `kotlinx.datetime.Instant`).
- * @property notes Optional notes.
+ * @property content Optional notes.
  * @property dueAt Optional due time. Serialized to string in snapshots.
  * @property priority Priority enum (LOW/MEDIUM/HIGH/DEFAULT).
  * @property status Status string, e.g. "OPEN" / "DONE"; used to split finished/unfinished.
@@ -44,7 +44,7 @@ data class Task(
     val id: Long,
     val title: String,
     val createdAt: Instant,
-    val notes: String? = null,
+    val content: String? = null,
     val dueAt: Instant? = null,
     val priority: Priority = Priority.DEFAULT,
     val status: TaskStatus = TaskStatus.OPEN,

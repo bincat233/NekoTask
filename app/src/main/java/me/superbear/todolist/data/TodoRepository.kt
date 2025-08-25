@@ -69,13 +69,14 @@ class TodoRepository(private val context: Context) {
                     id = itemJson.getLong("id"),
                     title = itemJson.getString("title"),
                     createdAt = Instant.parse(itemJson.getString("createdAtIso")),
-                    notes = itemJson.optString("notes").takeIf { it.isNotEmpty() },
+                    content = itemJson.optString("notes").takeIf { it.isNotEmpty() },
                     status = when (itemJson.getString("status")) {
                         "DONE" -> TaskStatus.DONE
                         "OPEN" -> TaskStatus.OPEN
                         else -> TaskStatus.OPEN // 默认为 OPEN
                     },
-                    parentId = if (itemJson.has("parentId")) itemJson.getLong("parentId") else null
+                    parentId = if (itemJson.has("parentId")) itemJson.getLong("parentId") else null,
+                    orderInParent = itemJson.optLong("orderInParent", 0)
                 )
             }
         } catch (e: Exception) {
@@ -131,6 +132,8 @@ class TodoRepository(private val context: Context) {
         val currentTasks = _tasks.value
         val newId = (currentTasks.maxOfOrNull { it.id } ?: 0) + 1
         val now = Clock.System.now()
+        val maxOrderInParent = currentTasks.filter { it.parentId == parentId }.maxOfOrNull { it.orderInParent } ?: -1
+
         val newTask = Task(
             id = newId,
             title = title,
@@ -138,7 +141,8 @@ class TodoRepository(private val context: Context) {
             parentId = parentId,
             dueAt = null,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            orderInParent = maxOrderInParent + 1
         )
         // Update the StateFlow with new task list
         _tasks.value = currentTasks + newTask

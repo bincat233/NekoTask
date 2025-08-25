@@ -31,11 +31,12 @@ class AssistantActionParser {
         val type: String,
         val id: Long? = null,
         val title: String? = null,
-        val notes: String? = null,
+        val content: String? = null,
         @SerialName("dueAt")
         val dueAtIso: String? = null,
         val priority: String? = null,
-        val parentId: Long? = null
+        val parentId: Long? = null,
+        val orderInParent: Long? = null
     )
 
     private val json = Json {
@@ -106,10 +107,11 @@ class AssistantActionParser {
                 } else {
                     AssistantAction.AddTask(
                         title = t,
-                        notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
+                        content = dto.content?.trim().takeIf { !it.isNullOrEmpty() },
                         dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
                         priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() },
-                        parentId = dto.parentId
+                        parentId = dto.parentId,
+                        orderInParent = dto.orderInParent
                     )
                 }
             }
@@ -129,10 +131,11 @@ class AssistantActionParser {
                     AssistantAction.UpdateTask(
                         id = id,
                         title = dto.title?.trim().takeIf { !it.isNullOrEmpty() },
-                        notes = dto.notes?.trim().takeIf { !it.isNullOrEmpty() },
+                        content = dto.content?.trim().takeIf { !it.isNullOrEmpty() },
                         dueAtIso = dto.dueAtIso?.trim().takeIf { !it.isNullOrEmpty() },
                         priority = dto.priority?.trim().takeIf { !it.isNullOrEmpty() },
-                        parentId = dto.parentId
+                        parentId = dto.parentId,
+                        orderInParent = dto.orderInParent
                     )
                 }
             }
@@ -203,7 +206,7 @@ object TaskStateSnapshotBuilder {
         childrenByParentId: Map<Long?, List<Task>>,
         includeAllFields: Boolean
     ): JsonObject {
-        val children = childrenByParentId[task.id] ?: emptyList()
+        val children = (childrenByParentId[task.id] ?: emptyList()).sortedBy { it.orderInParent }
         val doneChildren = children.count { it.status == TaskStatus.DONE }
         
         return buildJsonObject {
@@ -214,7 +217,8 @@ object TaskStateSnapshotBuilder {
             if (includeAllFields) {
                 task.dueAt?.let { put("dueAt", it.toString()) }
                 put("priority", task.priority.name)
-                task.notes?.let { put("notes", it.take(200)) }
+                task.content?.let { put("notes", it.take(200)) }
+                put("orderInParent", task.orderInParent)
             }
             
             // Add children recursively

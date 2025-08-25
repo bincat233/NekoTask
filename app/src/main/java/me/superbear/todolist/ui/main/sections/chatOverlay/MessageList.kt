@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,25 +49,40 @@ fun FullscreenMessageList(
         }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier
-            .fillMaxSize()
-            .padding(bottom = inputBarHeight), // Prevent overlap with input bar
-        reverseLayout = true, // Lays out items from bottom to top
-        contentPadding = PaddingValues(top = 16.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom)
-    ) {
-        items(messages.reversed()) { message ->
-            val isUser = message.sender == Sender.User
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-            ) {
-                ChatBubble(
-                    text = message.text,
-                    isUser = isUser
-                )
+    if (messages.isEmpty()) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(bottom = inputBarHeight)
+        ) {
+            Text(
+                text = "No messages yet",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    } else {
+        LazyColumn(
+            state = listState,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(bottom = inputBarHeight), // Prevent overlap with input bar
+            reverseLayout = true, // Lays out items from bottom to top
+            contentPadding = PaddingValues(top = 16.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom)
+        ) {
+            items(messages.reversed()) { message ->
+                val isUser = message.sender == Sender.User
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+                ) {
+                    ChatBubble(
+                        text = message.text,
+                        isUser = isUser
+                    )
+                }
             }
         }
     }

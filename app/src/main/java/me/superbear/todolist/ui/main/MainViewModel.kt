@@ -11,12 +11,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import me.superbear.todolist.assistant.AssistantActionParser
 import me.superbear.todolist.assistant.MockAssistantClient
 import me.superbear.todolist.assistant.RealAssistantClient
-import me.superbear.todolist.assistant.TaskStateSnapshotBuilder
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.domain.entities.ChatMessage
@@ -28,15 +26,10 @@ import me.superbear.todolist.domain.entities.TaskStatus
 import me.superbear.todolist.ui.main.sections.chatOverlay.AssistantActionHooks
 import me.superbear.todolist.ui.main.sections.chatOverlay.AssistantController
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayReducer
-import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayState
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerReducer
-import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerState
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddReducer
-import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddState
 import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityReducer
-import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityState
 import me.superbear.todolist.ui.main.sections.tasks.TaskReducer
-import me.superbear.todolist.ui.main.sections.tasks.TaskState
 import me.superbear.todolist.ui.main.state.AppEvent
 import me.superbear.todolist.ui.main.state.AppState
 
@@ -304,7 +297,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val newTask = Task(
             id = System.currentTimeMillis(),
             title = title,
-            notes = description,
+            content = description,
             createdAt = Clock.System.now(),
             dueAt = dueAtInstant,
             priority = currentState.priorityState.selectedPriority,

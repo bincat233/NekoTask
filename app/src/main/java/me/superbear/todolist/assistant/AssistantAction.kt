@@ -3,10 +3,11 @@ package me.superbear.todolist.assistant
 sealed class AssistantAction {
     data class AddTask(
         val title: String,
-        val notes: String? = null,
+        val content: String? = null,
         val dueAtIso: String? = null,
         val priority: String? = null,
-        val parentId: Long? = null
+        val parentId: Long? = null,
+        val orderInParent: Long? = null
     ) : AssistantAction()
 
     data class DeleteTask(
@@ -16,10 +17,11 @@ sealed class AssistantAction {
     data class UpdateTask(
         val id: Long,
         val title: String? = null,
-        val notes: String? = null,
+        val content: String? = null,
         val dueAtIso: String? = null,
         val priority: String? = null,
-        val parentId: Long? = null
+        val parentId: Long? = null,
+        val orderInParent: Long? = null
     ) : AssistantAction()
 
     data class CompleteTask(

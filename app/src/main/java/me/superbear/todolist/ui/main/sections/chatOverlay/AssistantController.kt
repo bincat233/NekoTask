@@ -77,7 +77,7 @@ class AssistantController(
                     val newTask = Task(
                         id = System.currentTimeMillis(),
                         title = action.title,
-                        notes = action.notes,
+                        content = action.content,
                         dueAt = parseToInstant(action.dueAtIso),
                         priority = mapPriority(action.priority),
                         status = TaskStatus.OPEN,
@@ -94,7 +94,7 @@ class AssistantController(
                 if (currentTask != null) {
                     var updatedTask = currentTask.copy(
                         title = action.title ?: currentTask.title,
-                        notes = action.notes ?: currentTask.notes,
+                        content = action.content ?: currentTask.content,
                         dueAt = action.dueAtIso?.let { parseToInstant(it) } ?: currentTask.dueAt,
                         priority = action.priority?.let { mapPriority(it) } ?: currentTask.priority
                     )
