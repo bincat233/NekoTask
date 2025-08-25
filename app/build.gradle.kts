@@ -43,12 +43,22 @@ android {
             buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY") ?: ""}\"")
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
             buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
+            // Controls whether to force no blur fallback even on supported versions
+            buildConfigField("boolean", "DEBUG_FORCE_NO_BLUR_FALLBACK", "false")
+            // Peek timeout debug flags
+            buildConfigField("boolean", "DEBUG_DISABLE_PEEK_TIMEOUT", "false")
+            buildConfigField("long", "DEBUG_PEEK_TIMEOUT_MS", "-1L")
         }
         debug {
             buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY") ?: ""}\"")
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
             buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
             buildConfigField("boolean", "FORCE_DELETE_DB", "true")
+            // Controls whether to force no blur fallback even on supported versions
+            buildConfigField("boolean", "DEBUG_FORCE_NO_BLUR_FALLBACK", "false")
+            // Peek timeout debug flags
+            buildConfigField("boolean", "DEBUG_DISABLE_PEEK_TIMEOUT", "false")
+            buildConfigField("long", "DEBUG_PEEK_TIMEOUT_MS", "-1L")
         }
     }
     compileOptions {

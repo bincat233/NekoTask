@@ -30,16 +30,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.domain.entities.ChatMessage
 import me.superbear.todolist.domain.entities.MessageStatus
 import me.superbear.todolist.domain.entities.Sender
 import me.superbear.todolist.ui.main.sections.chatOverlay.FullscreenMessageList
 import me.superbear.todolist.ui.main.sections.chatOverlay.PeekMessageList
 
-// Debug constants
-private const val DEBUG_FORCE_NO_BLUR_FALLBACK = false
-private const val DEBUG_DISABLE_PEEK_TIMEOUT = false
-private const val DEBUG_PEEK_TIMEOUT_MS: Long = -1L
+ // Debug constants has been moved to BuildConfig: DEBUG_DISABLE_PEEK_TIMEOUT, DEBUG_PEEK_TIMEOUT_MS
 
 // Chat overlay modes
 sealed class ChatOverlayMode {
@@ -73,7 +71,7 @@ fun ChatOverlaySection(
 
         // Background and click interceptor based on mode
         if (mode is ChatOverlayMode.Fullscreen) {
-            val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !DEBUG_FORCE_NO_BLUR_FALLBACK
+            val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !BuildConfig.DEBUG_FORCE_NO_BLUR_FALLBACK
             if (!canBlur) {
                 Surface(
                     color = Color.Black.copy(alpha = 0.85f),
@@ -134,10 +132,10 @@ private fun PeekChatLayout(
     localDensity: androidx.compose.ui.unit.Density
 ) {
     // Apply debug timeout adjustments
-    val adjustedAutoDismissMs = if (DEBUG_DISABLE_PEEK_TIMEOUT) {
+    val adjustedAutoDismissMs = if (BuildConfig.DEBUG_DISABLE_PEEK_TIMEOUT) {
         Long.MAX_VALUE
-    } else if (DEBUG_PEEK_TIMEOUT_MS > 0) {
-        DEBUG_PEEK_TIMEOUT_MS
+    } else if (BuildConfig.DEBUG_PEEK_TIMEOUT_MS > 0) {
+        BuildConfig.DEBUG_PEEK_TIMEOUT_MS
     } else {
         autoDismissMs
     }

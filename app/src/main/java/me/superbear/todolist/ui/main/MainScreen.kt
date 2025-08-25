@@ -31,6 +31,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ui.common.chat.ChatInputBar
 import me.superbear.todolist.domain.entities.MessageStatus
 import me.superbear.todolist.domain.entities.Sender
@@ -41,9 +42,6 @@ import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddSection
 import me.superbear.todolist.ui.main.sections.tasks.TaskSection
 import me.superbear.todolist.ui.main.sections.tasks.TaskEvent as TaskSectionEvent
 import me.superbear.todolist.ui.main.state.AppEvent
-
-// Debug constants
-private const val DEBUG_FORCE_NO_BLUR_FALLBACK = false
 
 // Main app modes - replaces scattered boolean states
 sealed class AppMode {
@@ -91,7 +89,7 @@ fun MainScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 全屏聊天时主内容做模糊动画（Android 12+），老版本回退为不模糊
-        val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !DEBUG_FORCE_NO_BLUR_FALLBACK
+        val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !BuildConfig.DEBUG_FORCE_NO_BLUR_FALLBACK
         val blurRadius by animateDpAsState(
             targetValue = if (currentMode == AppMode.ChatFullscreen && canBlur) 16.dp else 0.dp,
             label = "blurAnimation"
