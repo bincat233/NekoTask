@@ -39,9 +39,11 @@ class MockAssistantClient : AssistantClient {
 }
 
 // --- Logging helpers (only used for prettier logs) ---
+private val prettyJson by lazy { Json { prettyPrint = true } }
+
 private fun prettyWholeJson(text: String): String = runCatching {
     val element = Json.parseToJsonElement(text)
-    Json { prettyPrint = true }.encodeToString(element)
+    prettyJson.encodeToString(element)
 }.getOrElse { text }
 
 // Try to pretty-print embedded JSON inside a string. If no valid JSON is found, return original text.
@@ -61,7 +63,7 @@ private fun prettyEmbeddedJson(text: String): String {
     val candidate = extractCandidate(text) ?: return text
     return runCatching {
         val element = Json.parseToJsonElement(candidate)
-        val pretty = Json { prettyPrint = true }.encodeToString(element)
+        val pretty = prettyJson.encodeToString(element)
         // Replace only the candidate part with pretty version to preserve any prefixes like labels
         text.replaceRange(text.indexOf(candidate), text.indexOf(candidate) + candidate.length, pretty)
     }.getOrElse { text }

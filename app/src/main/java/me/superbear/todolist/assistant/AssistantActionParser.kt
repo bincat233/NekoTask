@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.superbear.todolist.domain.entities.Task
+import me.superbear.todolist.domain.entities.TaskStatus
 
 class AssistantActionParser {
 
@@ -166,8 +167,8 @@ class AssistantActionParser {
 object TaskStateSnapshotBuilder {
     fun build(tasks: List<Task>, maxUnfinished: Int = 20, maxFinished: Int = 20): String {
         val now = Clock.System.now().toString()
-        val unfinishedTasks = tasks.filter { it.status != "DONE" }
-        val finishedTasks = tasks.filter { it.status == "DONE" }
+        val unfinishedTasks = tasks.filter { it.status != TaskStatus.DONE }
+        val finishedTasks = tasks.filter { it.status == TaskStatus.DONE }
 
         val unfinishedJson = buildJsonArray {
             unfinishedTasks.take(maxUnfinished).forEach { task ->

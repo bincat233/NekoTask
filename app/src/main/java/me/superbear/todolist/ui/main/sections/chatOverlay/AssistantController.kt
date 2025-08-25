@@ -9,6 +9,7 @@ import me.superbear.todolist.assistant.AssistantEnvelope
 import me.superbear.todolist.domain.entities.ChatMessage
 import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Task
+import me.superbear.todolist.domain.entities.TaskStatus
 
 /**
  * Controller that encapsulates assistant communication and action execution logic.
@@ -79,7 +80,7 @@ class AssistantController(
                         notes = action.notes,
                         dueAt = parseToInstant(action.dueAtIso),
                         priority = mapPriority(action.priority),
-                        status = "OPEN",
+                        status = TaskStatus.OPEN,
                         createdAt = now
                     )
                     hooks.addTask(newTask)
@@ -111,7 +112,7 @@ class AssistantController(
             is AssistantAction.CompleteTask -> {
                 val currentTask = hooks.getTask(action.id)
                 if (currentTask != null) {
-                    val completedTask = currentTask.copy(status = "DONE")
+                    val completedTask = currentTask.copy(status = TaskStatus.DONE)
                     hooks.updateTask(completedTask)
                     Log.d("AssistantController", "Completed task with id ${action.id}")
                 } else {

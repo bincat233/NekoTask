@@ -39,6 +39,7 @@ import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlaySection
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerSection
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddSection
 import me.superbear.todolist.ui.main.sections.tasks.TaskSection
+import me.superbear.todolist.ui.main.sections.tasks.TaskEvent as TaskSectionEvent
 import me.superbear.todolist.ui.main.state.AppEvent
 
 // Debug constants
@@ -145,7 +146,7 @@ fun MainScreen(
             },
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
-            // 主内容区域（可被模糊）：任务列表
+            // 主内容区域（可被模糊的区域）：任务列表
             Box(
                 modifier = Modifier
                     .padding(innerPadding)
@@ -156,21 +157,15 @@ fun MainScreen(
                     state = state.taskState,
                     onToggleTask = { task ->
                         // 切换任务完成状态
-                        onEvent(AppEvent.Task(
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Toggle(task)
-                        ))
+                        onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
                     },
                     onAddSubtask = { parentId, title ->
                         // 新增子任务
-                        onEvent(AppEvent.Task(
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.AddSubtask(parentId, title)
-                        ))
+                        onEvent(AppEvent.Task(TaskSectionEvent.AddSubtask(parentId, title)))
                     },
                     onToggleSubtask = { childId, done ->
                         // 切换子任务完成状态
-                        onEvent(AppEvent.Task(
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.ToggleSubtask(childId, done)
-                        ))
+                        onEvent(AppEvent.Task(TaskSectionEvent.ToggleSubtask(childId, done)))
                     },
                     getChildren = viewModel::getChildren,
                     getParentProgress = viewModel::getParentProgress,

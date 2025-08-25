@@ -24,6 +24,7 @@ import me.superbear.todolist.domain.entities.MessageStatus
 import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Sender
 import me.superbear.todolist.domain.entities.Task
+import me.superbear.todolist.domain.entities.TaskStatus
 import me.superbear.todolist.ui.main.sections.chatOverlay.AssistantActionHooks
 import me.superbear.todolist.ui.main.sections.chatOverlay.AssistantController
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayReducer
@@ -74,14 +75,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadTasks() {
         viewModelScope.launch {
-            val tasks = todoRepository.getTasks("todolist_items.json")
-            _appState.update { currentState ->
-                currentState.copy(
-                    taskState = TaskReducer.reduce(
-                        currentState.taskState,
-                        me.superbear.todolist.ui.main.sections.tasks.TaskEvent.TasksLoaded(tasks)
+            // 观察 Repository 的任务变化，通过 TaskReducer 更新状态
+            // 这样保持了架构的一致性，避免 MainViewModel 过于臃肿
+            todoRepository.tasks.collect { tasks ->
+                _appState.update { currentState ->
+                    currentState.copy(
+                        taskState = TaskReducer.reduce(
+                            currentState.taskState,
+                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.TasksLoaded(tasks)
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -138,10 +142,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.AddSubtask -> {
-                handleAddSubtask(event.parentId, event.title)
+                todoRepository.addTask(title = event.title, parentId = event.parentId)
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.ToggleSubtask -> {
-                toggleSubtaskWithOptimisticUpdate(event.childId, event.done)
+                todoRepository.toggleTaskStatus(event.childId, event.done)
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.LoadTasks -> {
                 loadTasks()
@@ -205,7 +209,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Task Management with Side Effects
     private fun toggleTaskWithOptimisticUpdate(task: Task) {
         val originalStatus = task.status
-        val newStatus = if (originalStatus == "OPEN") "DONE" else "OPEN"
+        val newStatus = if (originalStatus == TaskStatus.OPEN) TaskStatus.DONE else TaskStatus.OPEN
         val updatedTask = task.copy(status = newStatus)
 
         // Optimistic update
@@ -241,7 +245,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             id = System.currentTimeMillis(),
             title = title,
             createdAt = Clock.System.now(),
-            status = "OPEN",
+            status = TaskStatus.OPEN,
             parentId = parentId,
             orderInParent = nextOrder
         )
@@ -263,7 +267,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.w("MainViewModel", "toggleSubtaskDone: task $childId not found")
             return
         }
-        val updated = current.copy(status = if (done) "DONE" else "OPEN")
+        val updated = current.copy(status = if (done) TaskStatus.DONE else TaskStatus.OPEN)
 
         // Optimistic update
         _appState.update { currentState ->
@@ -304,7 +308,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             createdAt = Clock.System.now(),
             dueAt = dueAtInstant,
             priority = currentState.priorityState.selectedPriority,
-            status = "OPEN"
+            status = TaskStatus.OPEN
         )
         
         // Add task
@@ -417,8 +421,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (envelope.actions.isNotEmpty()) {
             if (_appState.value.executeAssistantActions) {
                 executeAssistantActions(envelope.actions)
-            } else {
-                Log.d("MainViewModel", "Parsed ${envelope.actions.size} actions: ${envelope.actions}")
             }
         }
     }
@@ -486,7 +488,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             override suspend fun addSubtask(parentId: Long, title: String): Task {
-                return handleAddSubtask(parentId, title)
+                todoRepository.addTask(title, parentId)
+                // Return the newly created task (we need to find it in the repository)
+                val children = todoRepository.getChildren(parentId)
+                return children.maxByOrNull { it.createdAt } ?: throw IllegalStateException("Failed to create subtask")
             }
 
             override suspend fun getTask(taskId: Long): Task? {
@@ -494,24 +499,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             override suspend fun getChildren(parentId: Long): List<Task> {
-                return this@MainViewModel.getChildren(parentId)
+                return todoRepository.getChildren(parentId)
             }
         }
     }
 
-    // Utility methods for task relationships
+    // Utility methods for task relationships - delegate to repository
     fun getChildren(parentId: Long): List<Task> {
-        return _appState.value.taskState.items
-            .asSequence()
-            .filter { it.parentId == parentId }
-            .sortedWith(compareBy<Task> { it.orderInParent }.thenBy { it.createdAt })
-            .toList()
+        return todoRepository.getChildren(parentId)
     }
 
     fun getParentProgress(parentId: Long): Pair<Int, Int> {
-        val children = getChildren(parentId)
-        val total = children.size
-        val done = children.count { it.status == "DONE" }
-        return done to total
+        return todoRepository.getParentProgress(parentId)
     }
 }

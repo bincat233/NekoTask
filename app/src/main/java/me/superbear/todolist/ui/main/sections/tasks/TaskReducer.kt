@@ -1,6 +1,7 @@
 package me.superbear.todolist.ui.main.sections.tasks
 
 import me.superbear.todolist.domain.entities.Task
+import me.superbear.todolist.domain.entities.TaskStatus
 
 /**
  * Pure function reducer for task state updates
@@ -29,7 +30,7 @@ object TaskReducer {
                 state.copy(items = state.items.filterNot { it.id == event.taskId })
             }
             is TaskEvent.Toggle -> {
-                val newStatus = if (event.task.status == "OPEN") "DONE" else "OPEN"
+                val newStatus = if (event.task.status == TaskStatus.OPEN) TaskStatus.DONE else TaskStatus.OPEN
                 val updatedTask = event.task.copy(status = newStatus)
                 state.copy(
                     items = state.items.map {
@@ -43,7 +44,7 @@ object TaskReducer {
                 state
             }
             is TaskEvent.ToggleSubtask -> {
-                val newStatus = if (event.done) "DONE" else "OPEN"
+                val newStatus = if (event.done) TaskStatus.DONE else TaskStatus.OPEN
                 state.copy(
                     items = state.items.map { task ->
                         if (task.id == event.childId) {

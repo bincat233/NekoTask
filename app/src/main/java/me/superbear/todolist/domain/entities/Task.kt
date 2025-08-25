@@ -12,6 +12,15 @@ enum class Priority {
     LOW, MEDIUM, HIGH, DEFAULT
 }
 
+/**
+ * TaskStatus — task completion status enum.
+ * - OPEN: task is not completed yet
+ * - DONE: task is completed
+ */
+enum class TaskStatus {
+    OPEN, DONE
+}
+
 @Serializable
 /**
  * Task — todo item data model (like a Java POJO / JS object).
@@ -38,7 +47,7 @@ data class Task(
     val notes: String? = null,
     val dueAt: Instant? = null,
     val priority: Priority = Priority.DEFAULT,
-    val status: String = "OPEN",
+    val status: TaskStatus = TaskStatus.OPEN,
     val aiInsights: String? = null,
     val origin: String? = null,
     val updatedAt: Instant? = null,

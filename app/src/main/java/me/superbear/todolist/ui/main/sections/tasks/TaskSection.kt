@@ -1,13 +1,16 @@
 package me.superbear.todolist.ui.main.sections.tasks
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,12 +35,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import me.superbear.todolist.R
 import me.superbear.todolist.domain.entities.Task
+import me.superbear.todolist.domain.entities.TaskStatus
 
 // Row model to flatten headers and parent cards at the same LazyColumn level
 // Header = section title (e.g., "Unfinished"/"Finished")
@@ -73,6 +80,7 @@ fun TaskSection(
 
     // LazyColumn = the scrollable list container for the whole task section
     LazyColumn(modifier = modifier) {
+        // List items: headers and parent cards
         items(
             items = rows,
             key = { item ->
@@ -80,7 +88,7 @@ fun TaskSection(
                     is RowItem.Header -> "header_${item.title}"
                     is RowItem.Parent -> item.task.id
                 }
-            }
+            },
         ) { item ->
             when (item) {
                 // Header row (section title)
@@ -88,7 +96,7 @@ fun TaskSection(
                     Text(
                         text = item.title,
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical =8.dp)
                     )
                 }
                 // Parent task card row
@@ -108,6 +116,7 @@ fun TaskSection(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ParentTaskCard(
     task: Task,
@@ -122,6 +131,7 @@ private fun ParentTaskCard(
     var showAddDialog by remember(task.id) { mutableStateOf(false) }
     val children = remember(task.id) { getChildren(task.id) }
     val (doneCount, totalCount) = remember(task.id) { getParentProgress(task.id) }
+    val haptics = LocalHapticFeedback.current
 
     // Auto-expand when first subtask created
     LaunchedEffect(totalCount) {
@@ -134,71 +144,76 @@ private fun ParentTaskCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
-                checked = task.status == "DONE",
-                onCheckedChange = { onToggleParent() }
+                checked = task.status == TaskStatus.DONE,
+                onCheckedChange = { onToggleParent() },
             )
-            // Title + progress badge + expand/collapse button
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (task.status == TaskStatus.DONE) Color.Gray else Color.Unspecified,
+                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
+                modifier = Modifier.weight(1f)
+            )
+            // Progress badge X/Y
+            if (totalCount > 0) {
+                Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                     Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (task.status == "DONE") Color.Gray else Color.Unspecified,
-                        textDecoration = if (task.status == "DONE") TextDecoration.LineThrough else null,
-                        modifier = Modifier.weight(1f)
-                    )
-                    // Progress badge X/Y
-                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Text(
-                            text = "$doneCount/$totalCount",
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-                    IconButton(onClick = { expanded = !expanded }) {
-                        Icon(
-                            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = if (expanded) "Collapse" else "Expand"
-                        )
-                    }
-                }
-                // Secondary line: due-today indicator (optional)
-                val dueToday = remember(task.dueAt) { isDueToday(task) }
-                if (dueToday) {
-                    Text(
-                        text = "Due today",
+                        text = "$doneCount/$totalCount",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        modifier = Modifier.padding(horizontal = 8.dp)
                     )
                 }
             }
+            // Expand/collapse button
+            IconButton(onClick = { expanded = !expanded }) {
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand"
+                )
+            }
+            //// Secondary line: due-today indicator (optional)
+            //val dueToday = remember(task.dueAt) { isDueToday(task) }
+            //if (dueToday) {
+            //    Text(
+            //        text = "Due today",
+            //        style = MaterialTheme.typography.labelSmall,
+            //        color = MaterialTheme.colorScheme.primary
+            //    )
+            //}
         }
 
         // Expandable subtasks area (children list + add button)
         AnimatedVisibility(visible = expanded) {
-            Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+            // Subtasks container
+            val subtaskTabWidth = 16.dp
+            Column(modifier = Modifier.fillMaxWidth().padding(start = subtaskTabWidth)) {
                 children.forEach { child ->
                     // One subtask row: checkbox + title
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
+                            .padding(start = subtaskTabWidth),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
-                            checked = child.status == "DONE",
+                            checked = child.status == TaskStatus.DONE,
                             onCheckedChange = { checked -> onToggleSubtask(child.id, checked) }
                         )
                         Text(
                             text = child.title,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(start = 8.dp),
-                            color = if (child.status == "DONE") Color.Gray else Color.Unspecified,
-                            textDecoration = if (child.status == "DONE") TextDecoration.LineThrough else null
+                            color = if (child.status == TaskStatus.DONE) Color.Gray else Color.Unspecified,
+                            textDecoration = if (child.status == TaskStatus.DONE) TextDecoration.LineThrough else null
                         )
                     }
                 }
