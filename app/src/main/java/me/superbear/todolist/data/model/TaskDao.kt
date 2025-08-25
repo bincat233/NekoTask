@@ -1,7 +1,10 @@
 package me.superbear.todolist.data.model
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 import me.superbear.todolist.domain.entities.TaskStatus
 
@@ -62,4 +65,44 @@ interface TaskDao {
      */
     @Query("SELECT * FROM tasks WHERE status = 'DONE' ORDER BY parent_id ASC, order_in_parent ASC, created_at ASC")
     fun observeFinished(): Flow<List<TaskEntity>>
+
+    // Write operations for seeding and data management
+
+    /**
+     * Inserts a single task into the database.
+     * 
+     * @param task TaskEntity to insert
+     * @return Row ID of the inserted task
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTask(task: TaskEntity): Long
+
+    /**
+     * Inserts multiple tasks in a single transaction.
+     * Used primarily for seeding from JSON assets.
+     * 
+     * @param tasks List of TaskEntity objects to insert
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTasks(tasks: List<TaskEntity>)
+
+    /**
+     * Counts the total number of tasks in the database.
+     * Used to check if seeding is needed.
+     * 
+     * @return Total task count
+     */
+    @Query("SELECT COUNT(*) FROM tasks")
+    suspend fun getTaskCount(): Int
+
+    /**
+     * Seeds tasks from JSON assets in a single transaction.
+     * Ensures data consistency during the seeding process.
+     * 
+     * @param tasks List of tasks to seed
+     */
+    @Transaction
+    suspend fun seedTasks(tasks: List<TaskEntity>) {
+        insertTasks(tasks)
+    }
 }

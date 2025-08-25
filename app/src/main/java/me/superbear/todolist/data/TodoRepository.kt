@@ -2,12 +2,22 @@ package me.superbear.todolist.data
 
 import android.content.Context
 import android.util.Log
+import androidx.room.Room
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.Clock
+import me.superbear.todolist.data.model.AppDatabase
+import me.superbear.todolist.data.model.toDomain
+import me.superbear.todolist.data.model.toEntity
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
 import org.json.JSONArray
@@ -16,78 +26,69 @@ import java.nio.charset.StandardCharsets
 
 /**
  * Repository for handling Task data operations.
- * This class manages task state in memory with reactive StateFlow,
- * initially loading from JSON assets and supporting real-time updates.
+ * 
+ * This class now uses Room database as the single source of truth (SSOT),
+ * with automatic seeding from JSON assets on first launch.
+ * Provides reactive Flow-based data access for UI components.
  */
 class TodoRepository(private val context: Context) {
 
-    // Private mutable state for tasks
-    private val _tasks = MutableStateFlow<List<Task>>(emptyList())
-    // Public read-only state for UI observation
-    val tasks: StateFlow<List<Task>> = _tasks.asStateFlow()
+    // Room database instance
+    private val database: AppDatabase = Room.databaseBuilder(
+        context.applicationContext,
+        AppDatabase::class.java,
+        "todolist_database"
+    ).build()
+
+    // Seeding manager for initial data population
+    private val seedManager = SeedManager(context)
+    
+    // Repository scope for background operations
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Room Flow as the single source of truth
+    val tasks: Flow<List<Task>> = database.taskDao().observeAll().map { entities ->
+        entities.toDomain()
+    }
+
+    // Legacy StateFlow bridge (kept for compatibility, but Room Flow is preferred)
+    private val _tasksStateFlow = MutableStateFlow<List<Task>>(emptyList())
+    val tasksStateFlow: StateFlow<List<Task>> = _tasksStateFlow.asStateFlow()
 
     init {
-        // Load initial data from JSON on repository creation
-        loadInitialData()
-    }
-
-    /**
-     * Load initial task data from JSON assets into memory state
-     */
-    private fun loadInitialData() {
-        _tasks.value = getTasksFromJson("todolist_items.json")
+        // Initialize database and perform seeding if needed
+        initializeDatabase()
         
-    }
-
-    /**
-     * Loads and parses Tasks from a JSON file in the assets folder.
-     * This is now a private helper function used only for initial data loading.
-     * @param fileName The name of the JSON file in the assets folder (e.g., "todolist_items.json").
-     * @return A list of Task objects.
-     * Returns an empty list if there's an error during file reading or parsing.
-     */
-    private fun getTasksFromJson(fileName: String): List<Task> {
-        return try {
-            // Open an InputStream to the asset file.
-            val inputStream: InputStream = context.assets.open(fileName)
-            // Get the size of the file.
-            val size: Int = inputStream.available()
-            // Create a ByteArray to hold the file data.
-            val buffer = ByteArray(size)
-            // Read the file data into the buffer.
-            inputStream.read(buffer)
-            // Close the InputStream to free up resources.
-            inputStream.close()
-            // Convert the ByteArray to a String using UTF-8 encoding.
-            val jsonString = String(buffer, StandardCharsets.UTF_8)
-            // Parse the JSON string into a JSONArray.
-            val jsonArray = JSONArray(jsonString)
-            // Map each JSONObject in the JSONArray to a Task object.
-            List(jsonArray.length()) { i ->
-                val itemJson = jsonArray.getJSONObject(i)
-                Task(
-                    id = itemJson.getLong("id"),
-                    title = itemJson.getString("title"),
-                    createdAt = Instant.parse(itemJson.getString("createdAtIso")),
-                    content = itemJson.optString("notes").takeIf { it.isNotEmpty() },
-                    status = when (itemJson.getString("status")) {
-                        "DONE" -> TaskStatus.DONE
-                        "OPEN" -> TaskStatus.OPEN
-                        else -> TaskStatus.OPEN // 默认为 OPEN
-                    },
-                    parentId = if (itemJson.has("parentId")) itemJson.getLong("parentId") else null,
-                    orderInParent = itemJson.optLong("orderInParent", 0)
-                )
+        // Bridge Room Flow to StateFlow for legacy compatibility
+        repositoryScope.launch {
+            tasks.collect { taskList ->
+                _tasksStateFlow.value = taskList
             }
-        } catch (e: Exception) {
-            // Log any errors that occur during file reading or JSON parsing.
-            // In a production app, you might use a more sophisticated logging framework.
-            Log.e("TodoRepository", "Error loading items from JSON: ${e.message}", e)
-            e.printStackTrace() // Print stack trace for debugging.
-            // Return an empty list to prevent the app from crashing.
-            emptyList()
         }
     }
+
+    /**
+     * Initialize database and perform seeding if needed.
+     * This replaces the old JSON loading approach.
+     */
+    private fun initializeDatabase() {
+        repositoryScope.launch {
+            try {
+                if (seedManager.needsSeeding(database)) {
+                    Log.d("TodoRepository", "Database empty, seeding from JSON assets...")
+                    seedManager.seedFromAssets(database, context)
+                    Log.d("TodoRepository", "Database seeding completed successfully")
+                } else {
+                    Log.d("TodoRepository", "Database already seeded, skipping")
+                }
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to initialize database", e)
+            }
+        }
+    }
+
+    // Legacy JSON loading method removed - now handled by SeedManager
+    // This functionality has been moved to SeedManager.seedFromAssets()
 
     /**
      * Simulates an API call to update a Task on a server.
@@ -111,7 +112,16 @@ class TodoRepository(private val context: Context) {
      * Get all child tasks for a given parent task ID
      */
     fun getChildren(parentId: Long): List<Task> {
-        return _tasks.value.filter { it.parentId == parentId }
+        return _tasksStateFlow.value.filter { it.parentId == parentId }
+    }
+    
+    /**
+     * Observe child tasks for a given parent task ID (Room-based)
+     */
+    fun observeChildren(parentId: Long): Flow<List<Task>> {
+        return database.taskDao().observeChildren(parentId).map { entities ->
+            entities.toDomain()
+        }
     }
 
     /**
@@ -124,46 +134,58 @@ class TodoRepository(private val context: Context) {
     }
 
     /**
-     * Add a new task (parent or child) to the task list
+     * Add a new task (parent or child) to the database
      * @param title The title of the new task
      * @param parentId Optional parent ID for creating subtasks
      */
     fun addTask(title: String, parentId: Long? = null) {
-        val currentTasks = _tasks.value
-        val newId = (currentTasks.maxOfOrNull { it.id } ?: 0) + 1
-        val now = Clock.System.now()
-        val maxOrderInParent = currentTasks.filter { it.parentId == parentId }.maxOfOrNull { it.orderInParent } ?: -1
-
-        val newTask = Task(
-            id = newId,
-            title = title,
-            status = TaskStatus.OPEN,
-            parentId = parentId,
-            dueAt = null,
-            createdAt = now,
-            updatedAt = now,
-            orderInParent = maxOrderInParent + 1
-        )
-        // Update the StateFlow with new task list
-        _tasks.value = currentTasks + newTask
+        repositoryScope.launch {
+            try {
+                val now = Clock.System.now()
+                val maxOrder = database.taskDao().getMaxOrderInParent(parentId) ?: -1
+                val newId = System.currentTimeMillis() // Use timestamp as ID
+                
+                val newTask = Task(
+                    id = newId,
+                    title = title,
+                    status = TaskStatus.OPEN,
+                    parentId = parentId,
+                    dueAt = null,
+                    createdAt = now,
+                    updatedAt = now,
+                    orderInParent = maxOrder + 1L
+                )
+                
+                database.taskDao().insertTask(newTask.toEntity())
+                Log.d("TodoRepository", "Added new task: $title")
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to add task: $title", e)
+            }
+        }
     }
 
     /**
-     * Toggle the completion status of a task
+     * Toggle the completion status of a task in the database
      * @param id The ID of the task to toggle
      * @param done Whether the task should be marked as done
      */
     fun toggleTaskStatus(id: Long, done: Boolean) {
-        val currentTasks = _tasks.value.toMutableList()
-        val taskIndex = currentTasks.indexOfFirst { it.id == id }
-        
-        if (taskIndex != -1) {
-            val updatedTask = currentTasks[taskIndex].copy(
-                status = if (done) TaskStatus.DONE else TaskStatus.OPEN,
-                updatedAt = Clock.System.now()
-            )
-            currentTasks[taskIndex] = updatedTask
-            _tasks.value = currentTasks
+        repositoryScope.launch {
+            try {
+                val currentTask = _tasksStateFlow.value.find { it.id == id }
+                if (currentTask != null) {
+                    val updatedTask = currentTask.copy(
+                        status = if (done) TaskStatus.DONE else TaskStatus.OPEN,
+                        updatedAt = Clock.System.now()
+                    )
+                    database.taskDao().insertTask(updatedTask.toEntity())
+                    Log.d("TodoRepository", "Toggled task status: $id -> $done")
+                } else {
+                    Log.w("TodoRepository", "Task not found for toggle: $id")
+                }
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to toggle task status: $id", e)
+            }
         }
     }
 }
