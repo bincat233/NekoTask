@@ -87,6 +87,70 @@ class TodoRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Update a task with new field values.
+     * Preserves existing fields if not specified in the update.
+     * 
+     * @param id Task ID to update
+     * @param title New title (optional)
+     * @param content New content/notes (optional)
+     * @param priority New priority (optional)
+     * @param dueAt New due date (optional)
+     */
+    fun updateTask(
+        id: Long,
+        title: String? = null,
+        content: String? = null,
+        priority: me.superbear.todolist.domain.entities.Priority? = null,
+        dueAt: kotlinx.datetime.Instant? = null
+    ) {
+        repositoryScope.launch {
+            try {
+                val currentTask = _tasksStateFlow.value.find { it.id == id }
+                if (currentTask != null) {
+                    val updatedTask = currentTask.copy(
+                        title = title ?: currentTask.title,
+                        content = content ?: currentTask.content,
+                        priority = priority ?: currentTask.priority,
+                        dueAt = dueAt ?: currentTask.dueAt,
+                        updatedAt = Clock.System.now()
+                    )
+                    
+                    val rowsUpdated = database.taskDao().update(updatedTask.toEntity())
+                    if (rowsUpdated > 0) {
+                        Log.d("TodoRepository", "Updated task: $id")
+                    } else {
+                        Log.w("TodoRepository", "Task not found for update: $id")
+                    }
+                } else {
+                    Log.w("TodoRepository", "Task not found in StateFlow for update: $id")
+                }
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to update task: $id", e)
+            }
+        }
+    }
+
+    /**
+     * Delete a task by its ID.
+     * 
+     * @param id Task ID to delete
+     */
+    fun deleteTask(id: Long) {
+        repositoryScope.launch {
+            try {
+                val rowsDeleted = database.taskDao().deleteById(id)
+                if (rowsDeleted > 0) {
+                    Log.d("TodoRepository", "Deleted task: $id")
+                } else {
+                    Log.w("TodoRepository", "Task not found for deletion: $id")
+                }
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to delete task: $id", e)
+            }
+        }
+    }
+
     // Legacy JSON loading method removed - now handled by SeedManager
     // This functionality has been moved to SeedManager.seedFromAssets()
 
@@ -134,7 +198,9 @@ class TodoRepository(private val context: Context) {
     }
 
     /**
-     * Add a new task (parent or child) to the database
+     * Add a new task (parent or child) to the database.
+     * Uses Room's addTaskWithOrdering for atomic order computation.
+     * 
      * @param title The title of the new task
      * @param parentId Optional parent ID for creating subtasks
      */
@@ -142,7 +208,6 @@ class TodoRepository(private val context: Context) {
         repositoryScope.launch {
             try {
                 val now = Clock.System.now()
-                val maxOrder = database.taskDao().getMaxOrderInParent(parentId) ?: -1
                 val newId = System.currentTimeMillis() // Use timestamp as ID
                 
                 val newTask = Task(
@@ -153,11 +218,12 @@ class TodoRepository(private val context: Context) {
                     dueAt = null,
                     createdAt = now,
                     updatedAt = now,
-                    orderInParent = maxOrder + 1L
+                    orderInParent = 0 // Will be computed by addTaskWithOrdering
                 )
                 
-                database.taskDao().insertTask(newTask.toEntity())
-                Log.d("TodoRepository", "Added new task: $title")
+                // Use Room's transaction-based ordering method
+                val rowId = database.taskDao().addTaskWithOrdering(newTask.toEntity())
+                Log.d("TodoRepository", "Added new task: $title (rowId: $rowId)")
             } catch (e: Exception) {
                 Log.e("TodoRepository", "Failed to add task: $title", e)
             }
@@ -165,20 +231,22 @@ class TodoRepository(private val context: Context) {
     }
 
     /**
-     * Toggle the completion status of a task in the database
+     * Toggle the completion status of a task in the database.
+     * Uses efficient updateStatus method for better performance.
+     * 
      * @param id The ID of the task to toggle
      * @param done Whether the task should be marked as done
      */
     fun toggleTaskStatus(id: Long, done: Boolean) {
         repositoryScope.launch {
             try {
-                val currentTask = _tasksStateFlow.value.find { it.id == id }
-                if (currentTask != null) {
-                    val updatedTask = currentTask.copy(
-                        status = if (done) TaskStatus.DONE else TaskStatus.OPEN,
-                        updatedAt = Clock.System.now()
-                    )
-                    database.taskDao().insertTask(updatedTask.toEntity())
+                val newStatus = if (done) TaskStatus.DONE else TaskStatus.OPEN
+                val updatedAt = Clock.System.now().toEpochMilliseconds()
+                
+                // Use efficient status-only update
+                val rowsUpdated = database.taskDao().updateStatus(id, newStatus, updatedAt)
+                
+                if (rowsUpdated > 0) {
                     Log.d("TodoRepository", "Toggled task status: $id -> $done")
                 } else {
                     Log.w("TodoRepository", "Task not found for toggle: $id")

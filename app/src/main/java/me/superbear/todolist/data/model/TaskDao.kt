@@ -1,10 +1,12 @@
 package me.superbear.todolist.data.model
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 import me.superbear.todolist.domain.entities.TaskStatus
 
@@ -66,7 +68,7 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE status = 'DONE' ORDER BY parent_id ASC, order_in_parent ASC, created_at ASC")
     fun observeFinished(): Flow<List<TaskEntity>>
 
-    // Write operations for seeding and data management
+    // Write operations for data management
 
     /**
      * Inserts a single task into the database.
@@ -75,7 +77,46 @@ interface TaskDao {
      * @return Row ID of the inserted task
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTask(task: TaskEntity): Long
+    suspend fun insert(task: TaskEntity): Long
+
+    /**
+     * Updates an existing task in the database.
+     * 
+     * @param task TaskEntity with updated values
+     * @return Number of rows updated (should be 1 for success)
+     */
+    @Update
+    suspend fun update(task: TaskEntity): Int
+
+    /**
+     * Updates only the status and updatedAt fields of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param status New task status
+     * @param updatedAt Updated timestamp (epoch milliseconds)
+     * @return Number of rows updated
+     */
+    @Query("UPDATE tasks SET status = :status, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: TaskStatus, updatedAt: Long): Int
+
+    /**
+     * Deletes a task by its ID.
+     * 
+     * @param id Task ID to delete
+     * @return Number of rows deleted
+     */
+    @Query("DELETE FROM tasks WHERE id = :id")
+    suspend fun deleteById(id: Long): Int
+
+    /**
+     * Deletes a task entity.
+     * 
+     * @param task TaskEntity to delete
+     * @return Number of rows deleted
+     */
+    @Delete
+    suspend fun delete(task: TaskEntity): Int
 
     /**
      * Inserts multiple tasks in a single transaction.
@@ -105,4 +146,21 @@ interface TaskDao {
     suspend fun seedTasks(tasks: List<TaskEntity>) {
         insertTasks(tasks)
     }
+
+    /**
+     * Adds a new task with proper ordering in a transaction.
+     * Computes the next order value and inserts the task atomically.
+     * 
+     * @param task TaskEntity to add (orderInParent will be computed)
+     * @return Row ID of the inserted task
+     */
+    @Transaction
+    suspend fun addTaskWithOrdering(task: TaskEntity): Long {
+        val maxOrder = getMaxOrderInParent(task.parentId) ?: -1
+        val taskWithOrder = task.copy(orderInParent = maxOrder + 1L)
+        return insert(taskWithOrder)
+    }
+
+    // Legacy method name for backward compatibility
+    suspend fun insertTask(task: TaskEntity): Long = insert(task)
 }
