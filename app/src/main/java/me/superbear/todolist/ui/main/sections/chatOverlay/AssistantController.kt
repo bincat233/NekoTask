@@ -6,6 +6,7 @@ import me.superbear.todolist.assistant.AssistantAction
 import me.superbear.todolist.assistant.AssistantActionParser
 import me.superbear.todolist.assistant.AssistantClient
 import me.superbear.todolist.assistant.AssistantEnvelope
+import me.superbear.todolist.assistant.RealAssistantClient
 import me.superbear.todolist.domain.entities.ChatMessage
 import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Task
@@ -21,6 +22,13 @@ class AssistantController(
     private val assistantActionParser: AssistantActionParser
 ) {
     
+    /**
+     * Provide CURRENT_TODO_STATE snapshot supplier to the real client
+     */
+    fun setStateProvider(provider: () -> String) {
+        (realAssistantClient as? RealAssistantClient)?.stateProvider = provider
+    }
+
     /**
      * Send message to assistant and get response
      */

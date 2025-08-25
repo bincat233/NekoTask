@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import me.superbear.todolist.assistant.AssistantActionParser
 import me.superbear.todolist.assistant.MockAssistantClient
@@ -84,9 +86,102 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun setupAssistantStateProvider() {
-        // Set up state provider for assistant to access current task state
-        // This would need to be implemented in AssistantController or RealAssistantClient
-        // For now, we'll handle this through the existing mechanism
+        // Provide CURRENT_TODO_STATE to the real assistant client.
+        assistantController.setStateProvider {
+            buildCurrentTodoStateSnapshot()
+        }
+    }
+
+    // --- CURRENT_TODO_STATE snapshot ---
+    @Serializable
+    private data class Snapshot(
+        val now: String,
+        val unfinished: List<Node>,
+        val finished: List<Node>,
+        val finished_count: Int
+    )
+
+    @Serializable
+    private data class Node(
+        val id: Long,
+        val title: String,
+        val status: String,
+        val priority: String,
+        val dueAt: String? = null,
+        val children: List<Node> = emptyList(),
+        val totalChildren: Int = 0,
+        val doneChildren: Int = 0,
+        val progress: Float = 0f
+    )
+
+    private fun buildCurrentTodoStateSnapshot(): String {
+        val tasks = _appState.value.taskState.items
+        val nowIso = Clock.System.now().toString()
+
+        // Build parent->children maps for both statuses (for children lists)
+        val openTasks = tasks.filter { it.status == TaskStatus.OPEN }
+        val doneTasks = tasks.filter { it.status == TaskStatus.DONE }
+
+        val openChildrenMap = openTasks.groupBy { it.parentId }
+        val doneChildrenMap = doneTasks.groupBy { it.parentId }
+
+        // Also build a map across ALL tasks to compute totals/progress
+        val allChildrenMap = tasks.groupBy { it.parentId }
+        val byId = tasks.associateBy { it.id }
+
+        fun Task.priorityString(): String = this.priority.name
+
+        // Count all descendants for totals
+        fun allDescendants(id: Long): List<Task> {
+            val result = mutableListOf<Task>()
+            fun dfs(currId: Long) {
+                val kids = allChildrenMap[currId] ?: emptyList()
+                for (k in kids) {
+                    result += k
+                    val kidId = k.id
+                    if (kidId != null) dfs(kidId)
+                }
+            }
+            dfs(id)
+            return result
+        }
+
+        fun Task.toNode(childrenMap: Map<Long?, List<Task>>): Node {
+            val childTasks = childrenMap[this.id] ?: emptyList()
+            val childNodes = childTasks.map { it.toNode(childrenMap) }
+
+            val myId = this.id ?: -1L
+            val descendants = if (myId != -1L) allDescendants(myId) else emptyList()
+            val totalChildren = descendants.size
+            val doneChildren = descendants.count { it.status == TaskStatus.DONE }
+            val progress = if (totalChildren > 0) doneChildren.toFloat() / totalChildren else 0f
+
+            return Node(
+                id = myId,
+                title = this.title,
+                status = this.status.name,
+                priority = this.priorityString(),
+                dueAt = this.dueAt?.toString(),
+                children = childNodes,
+                totalChildren = totalChildren,
+                doneChildren = doneChildren,
+                progress = progress
+            )
+        }
+
+        fun buildTree(rootCandidates: List<Task>, childrenMap: Map<Long?, List<Task>>): List<Node> {
+            return rootCandidates.filter { it.parentId == null }.map { it.toNode(childrenMap) }
+        }
+
+        val unfinishedTree = buildTree(openTasks, openChildrenMap)
+        val finishedTree = buildTree(doneTasks, doneChildrenMap)
+        val snapshot = Snapshot(
+            now = nowIso,
+            unfinished = unfinishedTree,
+            finished = finishedTree,
+            finished_count = doneTasks.size
+        )
+        return json.encodeToString(snapshot)
     }
 
     /**

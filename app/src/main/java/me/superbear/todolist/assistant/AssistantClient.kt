@@ -178,19 +178,27 @@ Rules:
             OpenAIChatMessage(role = "system", content = "CURRENT_TODO_STATE: $snapshot")
         }
 
-        val messages = mutableListOf<OpenAIChatMessage>()
-        messages.add(systemInstruction)
-        stateMessage?.let { messages.add(it) }
-        messages.addAll(history.map {
+        // Always include system + CURRENT_TODO_STATE; trim only the chat history to fit the limit
+        val historyMessages = history.map {
             OpenAIChatMessage(
                 role = it.sender.name.lowercase(),
                 content = it.text
             )
-        })
+        }
+        // Reserve 2 slots for system + state (state may be null; safe to over-reserve)
+        val maxTotal = 10
+        val reserved = 2
+        val limitedHistory = historyMessages.takeLast(maxTotal - reserved)
+
+        val messages = mutableListOf<OpenAIChatMessage>().apply {
+            add(systemInstruction)
+            stateMessage?.let { add(it) }
+            addAll(limitedHistory)
+        }
 
         val request = OpenAIRequest(
             model = "gpt-5-mini",
-            messages = messages.takeLast(10) // Ensure we don't exceed token limits
+            messages = messages
         )
         
         return try {
