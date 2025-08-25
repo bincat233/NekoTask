@@ -33,6 +33,7 @@ import me.superbear.todolist.domain.entities.ChatMessage
 import me.superbear.todolist.domain.entities.MessageStatus
 import me.superbear.todolist.domain.entities.Sender
 import me.superbear.todolist.ui.common.chat.ChatBubble
+import me.superbear.todolist.ui.common.chat.AssistantTypingBubble
 
 @Composable
 fun FullscreenMessageList(
@@ -78,10 +79,14 @@ fun FullscreenMessageList(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                 ) {
-                    ChatBubble(
-                        text = message.text,
-                        isUser = isUser
-                    )
+                    if (!isUser && message.status == MessageStatus.Sending) {
+                        AssistantTypingBubble()
+                    } else {
+                        ChatBubble(
+                            text = message.text,
+                            isUser = isUser
+                        )
+                    }
                 }
             }
         }
@@ -155,11 +160,17 @@ fun PeekMessageList(
                     }
                 }
 
-            ChatBubble(
-                text = message.text,
-                isUser = isUser,
-                modifier = bubbleModifier
-            )
+            if (!isUser && message.status == MessageStatus.Sending) {
+                AssistantTypingBubble(
+                    modifier = bubbleModifier
+                )
+            } else {
+                ChatBubble(
+                    text = message.text,
+                    isUser = isUser,
+                    modifier = bubbleModifier
+                )
+            }
         }
     }
 }

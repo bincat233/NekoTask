@@ -1,5 +1,7 @@
 package me.superbear.todolist.ui.common.chat
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
@@ -8,6 +10,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
@@ -52,6 +55,30 @@ fun ChatBubble(
     }
 }
 
+@Composable
+fun AssistantTypingBubble(
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomEnd = 12.dp)
+    val color = MaterialTheme.colorScheme.surfaceVariant
+
+    Surface(
+        modifier = modifier.padding(start = 16.dp, end = 0.dp),
+        shape = shape,
+        color = color,
+        shadowElevation = 4.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .heightIn(min = 23.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            TypingIndicator()
+        }
+    }
+}
+
 @Preview
 @Composable
 private fun ChatBubblePreview() {
@@ -62,3 +89,4 @@ private fun ChatBubblePreview() {
         )
     }
 }
+
