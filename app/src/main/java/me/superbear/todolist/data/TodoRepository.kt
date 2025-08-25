@@ -45,7 +45,9 @@ class TodoRepository(private val context: Context) {
             context.applicationContext,
             AppDatabase::class.java,
             "todolist_database"
-        ).build()
+        )
+            .fallbackToDestructiveMigration()
+            .build()
     }
 
     // Repository scope for background operations
@@ -199,10 +201,9 @@ class TodoRepository(private val context: Context) {
 
                 // Step 3: Insert new task at target's original position
                 val now = Clock.System.now()
-                val newId = System.currentTimeMillis()
-                
+
                 val newTask = Task(
-                    id = newId,
+                    id = null,
                     title = title,
                     content = content,
                     status = TaskStatus.OPEN,
@@ -358,10 +359,9 @@ class TodoRepository(private val context: Context) {
         repositoryScope.launch {
             try {
                 val now = Clock.System.now()
-                val newId = System.currentTimeMillis() // Use timestamp as ID
-                
+
                 val newTask = Task(
-                    id = newId,
+                    id = null,
                     title = title,
                     status = TaskStatus.OPEN,
                     parentId = parentId,

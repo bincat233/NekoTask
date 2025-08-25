@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
  * Database configuration:
  * - entities: [TaskEntity] - defines the tables in the database
  * - views: [UnfinishedTasksView] - SQLite VIEWs for common filtering operations
- * - version: 2 - database schema version for migrations
+ * - version: 3 - database schema version for migrations
  * - exportSchema: false - disables schema export (no schema location configured)
  * 
  * Views included:
@@ -26,7 +26,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [TaskEntity::class], 
     views = [UnfinishedTasksView::class],
-    version = 2, 
+    version = 3, 
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

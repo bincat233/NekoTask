@@ -20,7 +20,7 @@ import me.superbear.todolist.domain.entities.TaskStatus
  */
 fun Task.toEntity(): TaskEntity {
     return TaskEntity(
-        id = id,
+        id = id ?: 0,
         title = title,
         content = content,
         status = status,

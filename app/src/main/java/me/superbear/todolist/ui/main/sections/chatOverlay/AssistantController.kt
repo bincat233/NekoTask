@@ -75,7 +75,7 @@ class AssistantController(
                     hooks.addSubtask(action.parentId, action.title)
                 } else {
                     val newTask = Task(
-                        id = System.currentTimeMillis(),
+                        id = null,
                         title = action.title,
                         content = action.content,
                         dueAt = parseToInstant(action.dueAtIso),

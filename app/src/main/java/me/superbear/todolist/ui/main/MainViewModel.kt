@@ -233,25 +233,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun handleAddSubtask(parentId: Long, title: String): Task {
-        val nextOrder = (getChildren(parentId).map { it.orderInParent }.maxOrNull() ?: -1L) + 1L
-        val newTask = Task(
-            id = System.currentTimeMillis(),
+        // Delegate creation to repository (Room auto-generates the ID and order)
+        todoRepository.addTask(title = title, parentId = parentId)
+        // Return the most recently created child as a best-effort approximation
+        val children = getChildren(parentId)
+        return children.maxByOrNull { it.createdAt } ?: Task(
+            id = null,
             title = title,
             createdAt = Clock.System.now(),
             status = TaskStatus.OPEN,
-            parentId = parentId,
-            orderInParent = nextOrder
+            parentId = parentId
         )
-        
-        _appState.update { currentState ->
-            currentState.copy(
-                taskState = TaskReducer.reduce(
-                    currentState.taskState,
-                    me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Add(newTask)
-                )
-            )
-        }
-        return newTask
     }
 
     private fun toggleSubtaskWithOptimisticUpdate(childId: Long, done: Boolean) {
@@ -293,41 +285,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val dueAtInstant = currentState.dateTimePickerState.selectedDueDateMs?.let { timestamp ->
             Instant.fromEpochMilliseconds(timestamp)
         }
-        
-        val newTask = Task(
-            id = System.currentTimeMillis(),
-            title = title,
-            content = description,
-            createdAt = Clock.System.now(),
-            dueAt = dueAtInstant,
-            priority = currentState.priorityState.selectedPriority,
-            status = TaskStatus.OPEN
-        )
-        
-        // Add task to database (this will automatically update UI via Room Flow)
+
+        // Add minimal task to database; Room will auto-generate the ID.
+        // For now we only persist the title to avoid guessing the generated ID.
+        // Follow-up enhancements can extend repository to accept description/priority/dueAt.
         viewModelScope.launch {
             try {
-                // Create a simplified task for the repository
                 todoRepository.addTask(title = title, parentId = null)
-                
-                // Update any additional fields if needed
-                if (description != null || dueAtInstant != null || currentState.priorityState.selectedPriority != Priority.DEFAULT) {
-                    // Find the newly created task and update it with additional details
-                    val newTaskId = System.currentTimeMillis() // This should match the ID used in addTask
-                    todoRepository.updateTask(
-                        id = newTaskId,
-                        content = description,
-                        priority = currentState.priorityState.selectedPriority,
-                        dueAt = dueAtInstant
-                    )
-                }
-                
                 Log.d("MainViewModel", "Task added successfully: $title")
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to add task: $title", e)
             }
         }
-        
+
         // Reset manual add form
         resetManualForm()
     }
@@ -462,14 +432,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun createAssistantActionHooks(): AssistantActionHooks {
         return object : AssistantActionHooks {
             override suspend fun addTask(task: Task) {
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = TaskReducer.reduce(
-                            currentState.taskState,
-                            me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Add(task)
-                        )
-                    )
-                }
+                // Persist via repository; UI updates through Room Flow
+                todoRepository.addTask(title = task.title, parentId = task.parentId)
             }
 
             override suspend fun updateTask(task: Task) {

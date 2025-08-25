@@ -27,7 +27,7 @@ enum class TaskStatus {
  *
  * Pure data, no UI logic. Typically treated as immutable; use `copy(...)` to create an updated instance.
  *
- * @property id Unique identifier (Long). Used to find/update/delete a task.
+ * @property id Unique identifier (Long?). Null for new tasks; assigned by DB.
  * @property title Title (required, short text).
  * @property createdAt Creation time (UTC timestamp, `kotlinx.datetime.Instant`).
  * @property content Optional notes.
@@ -41,7 +41,7 @@ enum class TaskStatus {
  * @property orderInParent Ordering within the same parent; larger values appear later. Defaults to 0.
  */
 data class Task(
-    val id: Long,
+    val id: Long? = null,
     val title: String,
     val createdAt: Instant,
     val content: String? = null,

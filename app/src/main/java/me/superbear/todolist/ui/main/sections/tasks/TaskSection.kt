@@ -87,7 +87,7 @@ fun TaskSection(
             key = { item ->
                 when (item) {
                     is RowItem.Header -> "header_${item.title}"
-                    is RowItem.Parent -> item.task.id
+                    is RowItem.Parent -> item.task.id ?: 0L
                 }
             },
         ) { item ->
@@ -103,8 +103,8 @@ fun TaskSection(
                 // Parent task card row
                 is RowItem.Parent -> {
                     val parent = item.task
-                    val children = getChildren(parent.id)
-                    val (doneCount, totalCount) = getParentProgress(parent.id)
+                    val children = parent.id?.let { getChildren(it) } ?: emptyList()
+                    val (doneCount, totalCount) = parent.id?.let { getParentProgress(it) } ?: (0 to 0)
                     ParentTaskCard(
                         task = parent,
                         children = children,
@@ -212,7 +212,7 @@ private fun ParentTaskCard(
                     ) {
                         Checkbox(
                             checked = child.status == TaskStatus.DONE,
-                            onCheckedChange = { checked -> onToggleSubtask(child.id, checked) }
+                            onCheckedChange = { checked -> child.id?.let { onToggleSubtask(it, checked) } }
                         )
                         Text(
                             text = child.title,
@@ -240,7 +240,7 @@ private fun ParentTaskCard(
             confirmButton = {
                 TextButton(onClick = {
                     if (title.isNotBlank()) {
-                        onAddSubtask(task.id, title)
+                        task.id?.let { onAddSubtask(it, title) }
                         title = ""
                         showAddDialog = false
                         expanded = true

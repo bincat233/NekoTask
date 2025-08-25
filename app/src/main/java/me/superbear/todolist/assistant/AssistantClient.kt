@@ -3,9 +3,13 @@
 package me.superbear.todolist.assistant
 
 import android.util.Log
+import io.ktor.client.engine.cio.CIO
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpRequestTimeoutException
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -21,6 +25,7 @@ import kotlinx.serialization.json.Json
 import kotlin.random.Random
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.domain.entities.ChatMessage
+import java.net.UnknownHostException
 
 interface AssistantClient {
     suspend fun send(message: String, history: List<ChatMessage>): Result<String>
@@ -76,13 +81,23 @@ class RealAssistantClient : AssistantClient {
         prettyPrint = false  // 传输时使用紧凑格式
     }
 
-    private val client = HttpClient {
+    private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(json)
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 60_000
+            connectTimeoutMillis = 15_000
+            socketTimeoutMillis = 60_000
+        }
+        install(Logging) {
+            level = if (BuildConfig.DEBUG) LogLevel.INFO else LogLevel.NONE
         }
     }
 
     private val apiKey: String = BuildConfig.OPENAI_API_KEY
+    private val baseUrl: String = (try { BuildConfig::class.java.getField("OPENAI_BASE_URL").get(null) as? String } catch (_: Exception) { null })
+        ?: "https://api.openai.com"
 
     var stateProvider: (() -> String)? = null
 
@@ -123,7 +138,7 @@ class RealAssistantClient : AssistantClient {
     }
 
     override suspend fun send(message: String, history: List<ChatMessage>): Result<String> {
-        if (apiKey.isBlank()) {
+        if (apiKey.isBlank() || apiKey.equals("null", ignoreCase = true)) {
             return Result.failure(Exception("OpenAI API key is missing. Please add it to your local.properties file."))
         }
 
@@ -181,7 +196,7 @@ Rules:
         return try {
             logRequest(request, messages)
             
-            val response = client.post("https://api.openai.com/v1/chat/completions") {
+            val response = client.post("${baseUrl.trimEnd('/')}/v1/chat/completions") {
                 header("Authorization", "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(request)
@@ -190,6 +205,8 @@ Rules:
             parseResponse(response)
         } catch (e: HttpRequestTimeoutException) {
             Result.failure(Exception("Request timed out. Please check your internet connection and try again."))
+        } catch (e: UnknownHostException) {
+            Result.failure(Exception("Unable to resolve host. Check your DNS/proxy or network connectivity."))
         } catch (e: Exception) {
             Result.failure(Exception("An unexpected error occurred: ${e.message}"))
         }
