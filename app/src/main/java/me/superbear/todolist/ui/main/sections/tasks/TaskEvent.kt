@@ -14,4 +14,6 @@ sealed class TaskEvent {
     data class ToggleSubtask(val childId: Long, val done: Boolean) : TaskEvent()
     object LoadTasks : TaskEvent()
     data class TasksLoaded(val tasks: List<Task>) : TaskEvent()
+    data class ShowDetail(val taskId: Long) : TaskEvent()
+    object HideDetail : TaskEvent()
 }

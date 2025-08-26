@@ -264,6 +264,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.ShowDetail -> {
+                // Show task detail sheet
+                _appState.update { currentState ->
+                    currentState.copy(
+                        taskState = currentState.taskState.copy(
+                            selectedTaskId = event.taskId,
+                            showDetail = true
+                        )
+                    )
+                }
+            }
+            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.HideDetail -> {
+                // Hide task detail sheet
+                _appState.update { currentState ->
+                    currentState.copy(
+                        taskState = currentState.taskState.copy(
+                            selectedTaskId = null,
+                            showDetail = false
+                        )
+                    )
+                }
+            }
         }
     }
 
