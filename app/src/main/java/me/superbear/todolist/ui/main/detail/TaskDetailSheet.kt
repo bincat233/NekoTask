@@ -3,7 +3,6 @@ package me.superbear.todolist.ui.main.detail
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,14 +16,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,7 +28,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,59 +99,74 @@ fun TaskDetailSheet(
             sheetState = sheetState,
             modifier = modifier
         ) {
-            val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-            
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .padding(horizontal = 16.dp)
             ) {
+                Spacer(modifier = Modifier.height(16.dp))
+                
                 // Header section with checkbox, due date, and priority
                 HeaderSection(
                     task = task,
                     onToggleDone = onToggleDone,
                     onChangeDue = onChangeDue,
-                    onChangePriority = onChangePriority,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    onChangePriority = onChangePriority
                 )
                 
-                // Scrollable content area
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Title
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Content
-                    Text(
-                        text = task.content ?: "No content",
-                        style = MaterialTheme.typography.bodyLarge,
-                        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.2f,
-                        color = if (task.content != null) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                    
-                    // Extra space at bottom for comfortable scrolling
-                    Spacer(modifier = Modifier.height(80.dp))
-                }
+                Spacer(modifier = Modifier.height(12.dp))
                 
-                // Bottom toolbar
-                BottomToolbar()
+                // Title section
+                TitleSection(task = task)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Content section (scrollable)
+                ContentSection(
+                    task = task,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // 底部空白区域，为工具栏预留空间
+                Spacer(modifier = Modifier.height(80.dp)) // 工具栏高度 + padding
+            }
+        }
+        
+        // ⚠️ WARNING: DO NOT TOUCH THE DIALOG TOOLBAR IMPLEMENTATION BELOW! ⚠️
+        // This Dialog-based toolbar is the ONLY WAY to keep the toolbar stuck at the bottom of the screen
+        // while allowing the BottomSheet content to scroll independently. Any other approach will cause
+        // the toolbar to scroll with the content or interfere with the sheet's drag behavior.
+        // The Dialog overlay with specific window flags is essential for proper positioning.
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(
+                dismissOnClickOutside = false,
+                dismissOnBackPress = false,
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            // Configure dialog window to overlay above BottomSheet
+            (LocalView.current.parent as DialogWindowProvider).window.apply {
+                setDimAmount(0f) // No dimming
+                addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            }
+            
+            // Full-screen container with toolbar at bottom
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                TaskDetailToolbar(
+                    task = task,
+                    onToggleDone = onToggleDone,
+                    onChangeDue = onChangeDue,
+                    onChangePriority = onChangePriority,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .padding(bottom = 32.dp)
+                )
             }
         }
     }
@@ -370,52 +379,117 @@ private fun PriorityDropdown(
     }
 }
 
-@Composable
-private fun BottomToolbar(
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier) {
-        HorizontalDivider()
-        
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.Start
-        ) {
-            // Tag icon
-            IconButton(
-                onClick = { /* TODO: Open tag editor */ }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Tag,
-                    contentDescription = "Tags",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            // List icon for subtasks
-            IconButton(
-                onClick = { /* TODO: Add subtask */ }
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.List,
-                    contentDescription = "Subtasks",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            
-            // Reserved space for future actions
-            Spacer(modifier = Modifier.weight(1f))
-        }
-    }
-}
-
 private fun formatDueDate(instant: Instant): String {
     val date = Date(instant.toEpochMilliseconds())
     val formatter = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
     return formatter.format(date)
 }
 
+@Composable
+private fun TitleSection(
+    task: Task,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = task.title,
+        style = MaterialTheme.typography.titleLarge,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+    )
+}
+
+@Composable
+private fun ContentSection(
+    task: Task,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+    
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = task.content ?: "No content",
+            style = MaterialTheme.typography.bodyLarge,
+            lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.4f
+        )
+    }
+}
+
+
+@Composable
+fun TaskDetailToolbar(
+    task: Task,
+    onToggleDone: (Task, Boolean) -> Unit,
+    onChangeDue: (Task) -> Unit,
+    onChangePriority: (Task) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Placeholder buttons
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(8.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "✓",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimary
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.secondary,
+                    shape = RoundedCornerShape(8.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "📅",
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.tertiary,
+                    shape = RoundedCornerShape(8.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "⚡",
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+        
+        Spacer(modifier = Modifier.weight(1f))
+        
+        Text(
+            text = "Priority: ${task.priority}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
