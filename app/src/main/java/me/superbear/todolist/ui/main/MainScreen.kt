@@ -296,6 +296,14 @@ fun MainScreen(
         TaskDetailSheet(
             visible = state.taskDetailState.isVisible,
             task = viewModel.getSelectedTask(),
+            title = viewModel.getSelectedTask()?.title ?: "",
+            onTitleChange = { newTitle ->
+                // TODO: Update task title
+            },
+            content = viewModel.getSelectedTask()?.content ?: "",
+            onContentChange = { newContent ->
+                // TODO: Update task content
+            },
             onDismiss = {
                 onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
             },

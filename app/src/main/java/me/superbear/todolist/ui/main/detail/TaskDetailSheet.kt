@@ -1,5 +1,12 @@
 package me.superbear.todolist.ui.main.detail
 
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.firstOrNull
+import android.util.Log
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,9 +35,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +57,14 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import android.view.WindowManager
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.SheetValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
 import me.superbear.todolist.domain.entities.Priority
@@ -70,6 +90,10 @@ import java.util.Locale
 fun TaskDetailSheet(
     visible: Boolean,
     task: Task?,
+    title: String,
+    onTitleChange: (String) -> Unit,
+    content: String,
+    onContentChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onToggleDone: (Task, Boolean) -> Unit,
     onChangeDue: (Task) -> Unit,
@@ -81,6 +105,38 @@ fun TaskDetailSheet(
         skipPartiallyExpanded = false
     )
 
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    // Detect if IME (soft keyboard) is visible
+    LaunchedEffect(imeVisible) {
+        if (visible && imeVisible) {
+            Log.d("TaskDetailSheet", "show() before expand")
+            sheetState.show()
+            // NOTE: Temporary workaround to force the sheet into Expanded when the IME (keyboard) appears.
+            //
+            // Current approach: we use a fixed delay (~300ms) before calling sheetState.expand().
+            // - Why: expand() is often cancelled if invoked too early (while the sheet is still
+            //   animating from Hidden/Partial or while the IME is adjusting window insets).
+            // - The delay ensures the sheet has settled into a visible state before forcing Expanded.
+            // - This is purely a pragmatic hack for demo purposes.
+            // TODO: Replace with a robust solution (e.g. snapshotFlow + awaitSettled) to avoid relying on magic numbers.
+            //
+            // Alternative approach (not implemented here):
+            // - Dynamically switch the BottomSheet modifier when IME is visible:
+            //       if (imeVisible) Modifier.fillMaxHeight(1f) else Modifier.fillMaxHeight(0.5f)
+            // - That guarantees a visual "full screen" effect when the keyboard shows,
+            //   but it couples sizing logic with insets instead of state, and may look abrupt.
+            //
+            // In short: delay(300) works for now, but should be replaced with either a
+            // proper state-based expand trigger or an IME-aware modifier toggle.
+            Log.d("TaskDetailSheet", "expanding…")
+            delay(300)
+            sheetState.expand()
+        }
+    }
+    LaunchedEffect(sheetState.currentValue) {
+        Log.d("TaskDetailSheet", "sheet current=${sheetState.currentValue}")
+    }
     // Handle back button when sheet is visible
     BackHandler(enabled = visible) {
         onDismiss()
@@ -93,11 +149,13 @@ fun TaskDetailSheet(
         }
     }
 
+
     if (visible && task != null) {
+
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState = sheetState,
-            modifier = modifier
+            modifier = modifier.fillMaxHeight()
         ) {
             Column(
                 modifier = Modifier
@@ -117,13 +175,17 @@ fun TaskDetailSheet(
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 // Title section
-                TitleSection(task = task)
+                TitleSection(
+                    title = title,
+                    onTitleChange = onTitleChange
+                )
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // Content section (scrollable)
                 ContentSection(
-                    task = task,
+                    content = content,
+                    onContentChange = onContentChange,
                     modifier = Modifier.weight(1f)
                 )
                 
@@ -131,7 +193,8 @@ fun TaskDetailSheet(
                 Spacer(modifier = Modifier.height(80.dp)) // 工具栏高度 + padding
             }
         }
-        
+
+        // INFO:
         // ⚠️ WARNING: DO NOT TOUCH THE DIALOG TOOLBAR IMPLEMENTATION BELOW! ⚠️
         // This Dialog-based toolbar is the ONLY WAY to keep the toolbar stuck at the bottom of the screen
         // while allowing the BottomSheet content to scroll independently. Any other approach will cause
@@ -387,12 +450,27 @@ private fun formatDueDate(instant: Instant): String {
 
 @Composable
 private fun TitleSection(
-    task: Task,
+    title: String,
+    onTitleChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Text(
-        text = task.title,
-        style = MaterialTheme.typography.titleLarge,
+    val focusManager = LocalFocusManager.current
+    
+    TextField(
+        value = title,
+        onValueChange = onTitleChange,
+        placeholder = { Text("Title") },
+        textStyle = MaterialTheme.typography.titleLarge,
+        singleLine = true,
+        maxLines = 1,
+        keyboardOptions = KeyboardOptions(
+            imeAction = ImeAction.Done
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = {
+                focusManager.clearFocus()
+            }
+        ),
         modifier = modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
@@ -401,7 +479,8 @@ private fun TitleSection(
 
 @Composable
 private fun ContentSection(
-    task: Task,
+    content: String,
+    onContentChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -412,10 +491,17 @@ private fun ContentSection(
             .verticalScroll(scrollState)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Text(
-            text = task.content ?: "No content",
-            style = MaterialTheme.typography.bodyLarge,
-            lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.4f
+        TextField(
+            value = content,
+            onValueChange = onContentChange,
+            placeholder = { Text("Add details…") },
+            textStyle = MaterialTheme.typography.bodyLarge,
+            minLines = 3,
+            maxLines = 12,
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Default
+            ),
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
