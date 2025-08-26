@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarToday
@@ -33,10 +34,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,7 +59,7 @@ import android.view.WindowManager
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.material3.SheetValue
+import android.view.Gravity
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalDensity
@@ -79,14 +78,14 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * TaskDetailSheet - A bottom sheet for displaying and editing task details
+ * TaskDetailSheet - A dialog-based sheet for displaying and editing task details
  * 
  * Features:
- * - Material3 ModalBottomSheet with drag handle
- * - Default state: PartiallyExpanded (half-height)
- * - Supports drag to Expanded (full-height) 
- * - Swipe down to Hidden triggers onDismiss
- * - BackHandler support for closing
+ * - Dialog-based approach with proper window configuration
+ * - Fullscreen capability with IME-aware expansion
+ * - Outside click dismiss support
+ * - No dim background for clean overlay
+ * - Navigation bar padding support
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,97 +102,146 @@ fun TaskDetailSheet(
     onChangePriority: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Bottom sheet state - allows PartiallyExpanded (half-height) by default
-    val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = false
-    )
-
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
-    // Detect if IME (soft keyboard) is visible
+    
+    // State to track if dialog should be fullscreen (IME visible or user expanded)
+    var isFullscreen by remember { mutableStateOf(false) }
+    
+    // Auto-expand to fullscreen when IME appears
     LaunchedEffect(imeVisible) {
         if (visible && imeVisible) {
-            Log.d("TaskDetailSheet", "show() before expand")
-            sheetState.show()
-            // NOTE: Temporary workaround to force the sheet into Expanded when the IME (keyboard) appears.
-            //
-            // Current approach: we use a fixed delay (~300ms) before calling sheetState.expand().
-            // - Why: expand() is often cancelled if invoked too early (while the sheet is still
-            //   animating from Hidden/Partial or while the IME is adjusting window insets).
-            // - The delay ensures the sheet has settled into a visible state before forcing Expanded.
-            // - This is purely a pragmatic hack for demo purposes.
-            // TODO: Replace with a robust solution (e.g. snapshotFlow + awaitSettled) to avoid relying on magic numbers.
-            //
-            // Alternative approach (not implemented here):
-            // - Dynamically switch the BottomSheet modifier when IME is visible:
-            //       if (imeVisible) Modifier.fillMaxHeight(1f) else Modifier.fillMaxHeight(0.5f)
-            // - That guarantees a visual "full screen" effect when the keyboard shows,
-            //   but it couples sizing logic with insets instead of state, and may look abrupt.
-            //
-            // In short: delay(300) works for now, but should be replaced with either a
-            // proper state-based expand trigger or an IME-aware modifier toggle.
-            Log.d("TaskDetailSheet", "expanding…")
-            delay(300)
-            sheetState.expand()
+            Log.d("TaskDetailSheet", "IME visible, expanding to fullscreen")
+            isFullscreen = true
+        } else if (visible && !imeVisible) {
+            // When IME hides, we can choose to stay fullscreen or collapse
+            // For now, let's keep it fullscreen once expanded
+            Log.d("TaskDetailSheet", "IME hidden")
         }
     }
-    LaunchedEffect(sheetState.currentValue) {
-        Log.d("TaskDetailSheet", "sheet current=${sheetState.currentValue}")
+    
+    // Reset fullscreen state when dialog is dismissed
+    LaunchedEffect(visible) {
+        if (!visible) {
+            isFullscreen = false
+        }
     }
+    
     // Handle back button when sheet is visible
     BackHandler(enabled = visible) {
         onDismiss()
     }
 
-    // Auto-dismiss when sheet is hidden via swipe
-    LaunchedEffect(sheetState.isVisible) {
-        if (!sheetState.isVisible && visible) {
-            onDismiss()
-        }
-    }
-
 
     if (visible && task != null) {
-
-        ModalBottomSheet(
+        Dialog(
             onDismissRequest = onDismiss,
-            sheetState = sheetState,
-            modifier = modifier.fillMaxHeight()
+            properties = DialogProperties(
+                dismissOnClickOutside = true,
+                dismissOnBackPress = true,
+                usePlatformDefaultWidth = false
+            )
         ) {
-            Column(
+            // Configure dialog window properties
+            (LocalView.current.parent as DialogWindowProvider).window.apply {
+                setGravity(Gravity.BOTTOM)
+                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND) // Remove dim background
+                
+                // Set layout parameters for proper positioning
+                attributes = attributes.apply {
+                    width = WindowManager.LayoutParams.MATCH_PARENT
+                    height = if (isFullscreen) {
+                        WindowManager.LayoutParams.MATCH_PARENT
+                    } else {
+                        WindowManager.LayoutParams.WRAP_CONTENT
+                    }
+                }
+            }
+            
+            // Calculate navigation bar padding
+            val navigationBarPadding = with(density) {
+                WindowInsets.navigationBars.getBottom(this).toDp()
+            }
+            
+            // Main content container
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .then(
+                        if (isFullscreen) {
+                            Modifier.fillMaxHeight()
+                        } else {
+                            Modifier.fillMaxHeight(0.6f) // Default to 60% height
+                        }
+                    )
+                    .background(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = if (isFullscreen) {
+                            RoundedCornerShape(0.dp)
+                        } else {
+                            RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                        }
+                    )
+                    .padding(bottom = navigationBarPadding)
             ) {
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Header section with checkbox, due date, and priority
-                HeaderSection(
-                    task = task,
-                    onToggleDone = onToggleDone,
-                    onChangeDue = onChangeDue,
-                    onChangePriority = onChangePriority
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // Title section
-                TitleSection(
-                    title = title,
-                    onTitleChange = onTitleChange
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Content section (scrollable)
-                ContentSection(
-                    content = content,
-                    onContentChange = onContentChange,
-                    modifier = Modifier.weight(1f)
-                )
-                
-                // 底部空白区域，为工具栏预留空间
-                Spacer(modifier = Modifier.height(80.dp)) // 工具栏高度 + padding
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    // Drag handle (only show when not fullscreen)
+                    if (!isFullscreen) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(32.dp)
+                                    .height(4.dp)
+                                    .background(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        shape = RoundedCornerShape(2.dp)
+                                    )
+                                    .clickable {
+                                        isFullscreen = true
+                                    }
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(if (isFullscreen) 16.dp else 8.dp))
+                    
+                    // Header section with checkbox, due date, and priority
+                    HeaderSection(
+                        task = task,
+                        onToggleDone = onToggleDone,
+                        onChangeDue = onChangeDue,
+                        onChangePriority = onChangePriority
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // Title section
+                    TitleSection(
+                        title = title,
+                        onTitleChange = onTitleChange
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Content section (scrollable)
+                    ContentSection(
+                        content = content,
+                        onContentChange = onContentChange,
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    // Bottom space for toolbar
+                    Spacer(modifier = Modifier.height(80.dp))
+                }
             }
         }
 
