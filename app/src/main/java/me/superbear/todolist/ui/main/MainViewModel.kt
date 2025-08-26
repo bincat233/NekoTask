@@ -31,6 +31,7 @@ import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityReducer
+import me.superbear.todolist.ui.main.state.TaskDetailEvent
 import me.superbear.todolist.ui.main.state.AppEvent
 import me.superbear.todolist.ui.main.state.AppState
 
@@ -194,6 +195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is AppEvent.ManualAdd -> handleManualAddEvent(event.event)
             is AppEvent.DateTimePicker -> handleDateTimePickerEvent(event.event)
             is AppEvent.Priority -> handlePriorityEvent(event.event)
+            is AppEvent.TaskDetail -> handleTaskDetailEvent(event.event)
             is AppEvent.SetUseMockAssistant -> {
                 _appState.update { it.copy(useMockAssistant = event.useMock) }
             }
@@ -264,28 +266,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
-            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.ShowDetail -> {
-                // Show task detail sheet
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = currentState.taskState.copy(
-                            selectedTaskId = event.taskId,
-                            showDetail = true
-                        )
-                    )
-                }
-            }
-            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.HideDetail -> {
-                // Hide task detail sheet
-                _appState.update { currentState ->
-                    currentState.copy(
-                        taskState = currentState.taskState.copy(
-                            selectedTaskId = null,
-                            showDetail = false
-                        )
-                    )
-                }
-            }
         }
     }
 
@@ -320,18 +300,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun handleDateTimePickerEvent(event: me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent) {
-        _appState.update { currentState ->
-            currentState.copy(
-                dateTimePickerState = DateTimePickerReducer.reduce(currentState.dateTimePickerState, event)
-            )
+        when (event) {
+            is me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.SetDueDate -> {
+                // If task detail is open, apply directly to the selected task
+                val detail = _appState.value.taskDetailState
+                val taskId = detail.selectedTaskId
+                if (detail.isVisible && taskId != null && event.timestamp != null) {
+                    val id = taskId
+                    viewModelScope.launch {
+                        try {
+                            todoRepository.updateTask(id, dueAt = Instant.fromEpochMilliseconds(event.timestamp))
+                        } catch (_: Exception) {}
+                    }
+                }
+                _appState.update { currentState ->
+                    currentState.copy(
+                        dateTimePickerState = DateTimePickerReducer.reduce(currentState.dateTimePickerState, event)
+                    )
+                }
+            }
+            else -> {
+                _appState.update { currentState ->
+                    currentState.copy(
+                        dateTimePickerState = DateTimePickerReducer.reduce(currentState.dateTimePickerState, event)
+                    )
+                }
+            }
         }
     }
 
     private fun handlePriorityEvent(event: me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityEvent) {
+        if (event is me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityEvent.SetPriority) {
+            val detail = _appState.value.taskDetailState
+            val taskId = detail.selectedTaskId
+            if (detail.isVisible && taskId != null) {
+                val id = taskId
+                viewModelScope.launch { todoRepository.updateTask(id, priority = event.priority) }
+            }
+        }
         _appState.update { currentState ->
             currentState.copy(
                 priorityState = PriorityReducer.reduce(currentState.priorityState, event)
             )
+        }
+    }
+
+    private fun handleTaskDetailEvent(event: TaskDetailEvent) {
+        when (event) {
+            is TaskDetailEvent.ShowDetail -> {
+                _appState.update { it.copy(taskDetailState = it.taskDetailState.copy(isVisible = true, selectedTaskId = event.taskId)) }
+            }
+            is TaskDetailEvent.HideDetail -> {
+                _appState.update { it.copy(taskDetailState = it.taskDetailState.copy(isVisible = false, selectedTaskId = null)) }
+            }
         }
     }
 
@@ -551,5 +572,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getParentProgress(parentId: Long): Pair<Int, Int> {
         return todoRepository.getParentProgressFromFlow(parentId)
+    }
+
+    /**
+     * Get the currently selected task for the task detail sheet
+     */
+    fun getSelectedTask(): Task? {
+        val selectedTaskId = _appState.value.taskDetailState.selectedTaskId
+        return if (selectedTaskId != null) {
+            _appState.value.taskState.items.find { it.id == selectedTaskId }
+        } else {
+            null
+        }
     }
 }

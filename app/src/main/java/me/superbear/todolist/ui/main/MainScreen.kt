@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -39,10 +40,11 @@ import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayMode
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlaySection
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerSection
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddSection
+import me.superbear.todolist.ui.main.detail.TaskDetailSheet
 import me.superbear.todolist.ui.main.sections.tasks.TaskSection
 import me.superbear.todolist.ui.main.sections.tasks.TaskEvent as TaskSectionEvent
 import me.superbear.todolist.ui.main.state.AppEvent
-import me.superbear.todolist.ui.main.detail.TaskDetailSheet
+import me.superbear.todolist.ui.main.state.TaskDetailEvent
 
 // Main app modes - replaces scattered boolean states
 sealed class AppMode {
@@ -87,8 +89,8 @@ fun MainScreen(
     BackHandler(enabled = currentMode == AppMode.ChatFullscreen) { 
         onEvent(AppEvent.ChatOverlay(me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.SetChatOverlayMode("peek")))
     }
-    BackHandler(enabled = state.taskState.showDetail) {
-        onEvent(AppEvent.Task(TaskSectionEvent.HideDetail))
+    BackHandler(enabled = state.taskDetailState.isVisible) {
+        onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -175,14 +177,13 @@ fun MainScreen(
                         // 切换子任务完成状态
                         onEvent(AppEvent.Task(TaskSectionEvent.ToggleSubtask(childId, done)))
                     },
-                    onTaskClick = { task ->
-                        // Show task detail sheet
-                        task.id?.let { taskId ->
-                            onEvent(AppEvent.Task(TaskSectionEvent.ShowDetail(taskId)))
-                        }
-                    },
                     getChildren = viewModel::getChildren,
                     getParentProgress = viewModel::getParentProgress,
+                    onTaskClick = { task ->
+                        task.id?.let { id ->
+                            onEvent(AppEvent.TaskDetail(TaskDetailEvent.ShowDetail(id)))
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -290,6 +291,26 @@ fun MainScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+
+        // 任务详情底部弹窗
+        TaskDetailSheet(
+            visible = state.taskDetailState.isVisible,
+            task = viewModel.getSelectedTask(),
+            onDismiss = {
+                onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
+            },
+            onToggleDone = { task, done ->
+                // 切换任务完成状态
+                onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
+            },
+            onChangeDue = { task ->
+                // TODO: 打开日期时间选择器
+            },
+            onChangePriority = { task ->
+                // TODO: 打开优先级选择器
+            }
+        )
+
         
         // 日期时间选择器（全局显示，内部根据 state 控制可见性）
         DateTimePickerSection(
@@ -304,31 +325,6 @@ fun MainScreen(
                 // 关闭选择器
                 onEvent(AppEvent.DateTimePicker(
                     me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Close
-                ))
-            }
-        )
-        
-        // Task detail sheet
-        TaskDetailSheet(
-            visible = state.taskState.showDetail,
-            task = state.taskState.selectedTask,
-            onDismiss = {
-                onEvent(AppEvent.Task(TaskSectionEvent.HideDetail))
-            },
-            onToggleDone = { task, done ->
-                // Toggle task completion status
-                onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
-            },
-            onChangeDue = { task ->
-                // Open date time picker for the task (placeholder for now)
-                onEvent(AppEvent.DateTimePicker(
-                    me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Open
-                ))
-            },
-            onChangePriority = { task ->
-                // Open priority selector for the task (placeholder for now)
-                onEvent(AppEvent.Priority(
-                    me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityEvent.OpenMenu
                 ))
             }
         )

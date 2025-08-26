@@ -65,9 +65,9 @@ fun TaskSection(
     onToggleTask: (Task) -> Unit,
     onAddSubtask: (parentId: Long, title: String) -> Unit,
     onToggleSubtask: (childId: Long, done: Boolean) -> Unit,
-    onTaskClick: (Task) -> Unit,
     getChildren: (parentId: Long) -> List<Task>,
     getParentProgress: (parentId: Long) -> Pair<Int, Int>,
+    onTaskClick: (Task) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Build a flat list of header and parent rows to feed the LazyColumn
@@ -112,9 +112,9 @@ fun TaskSection(
                         doneCount = doneCount,
                         totalCount = totalCount,
                         onToggleParent = { onToggleTask(parent) },
-                        onTaskClick = { onTaskClick(parent) },
                         onAddSubtask = onAddSubtask,
-                        onToggleSubtask = onToggleSubtask
+                        onToggleSubtask = onToggleSubtask,
+                        onClick = { onTaskClick(parent) }
                     )
                 }
             }
@@ -130,9 +130,9 @@ private fun ParentTaskCard(
     doneCount: Int,
     totalCount: Int,
     onToggleParent: () -> Unit,
-    onTaskClick: () -> Unit,
     onAddSubtask: (parentId: Long, title: String) -> Unit,
-    onToggleSubtask: (childId: Long, done: Boolean) -> Unit
+    onToggleSubtask: (childId: Long, done: Boolean) -> Unit,
+    onClick: () -> Unit,
 ) {
     // Local UI state: expansion of children and add-subtask dialog visibility
     var expanded by remember(task.id) { mutableStateOf(false) }
@@ -152,12 +152,8 @@ private fun ParentTaskCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = {
-                        println("TaskSection: Row onClick triggered for task ${task.id} - ${task.title}")
-                        onTaskClick()
-                    },
+                    onClick = onClick,
                     onLongClick = {
-                        println("TaskSection: Row onLongClick triggered for task ${task.id} - ${task.title}")
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     }
                 ),
@@ -165,10 +161,7 @@ private fun ParentTaskCard(
         ) {
             Checkbox(
                 checked = task.status == TaskStatus.DONE,
-                onCheckedChange = { 
-                    println("TaskSection: Checkbox onCheckedChange triggered for task ${task.id} - ${task.title}")
-                    onToggleParent() 
-                },
+                onCheckedChange = { onToggleParent() },
             )
             Text(
                 text = task.title,

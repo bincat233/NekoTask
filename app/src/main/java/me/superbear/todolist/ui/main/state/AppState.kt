@@ -7,6 +7,14 @@ import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityState
 import me.superbear.todolist.ui.main.sections.tasks.TaskState
 
 /**
+ * Task detail sheet state
+ */
+data class TaskDetailState(
+    val isVisible: Boolean = false,
+    val selectedTaskId: Long? = null
+)
+
+/**
  * Root UI State that composes all sub-domain states
  */
 data class AppState(
@@ -15,6 +23,7 @@ data class AppState(
     val manualAddState: ManualAddState = ManualAddState(),
     val dateTimePickerState: DateTimePickerState = DateTimePickerState(),
     val priorityState: PriorityState = PriorityState(),
+    val taskDetailState: TaskDetailState = TaskDetailState(),
     val useMockAssistant: Boolean = true,
     val executeAssistantActions: Boolean = true
 )
