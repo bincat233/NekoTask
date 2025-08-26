@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.firstOrNull
 import android.util.Log
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -158,22 +160,10 @@ fun TaskDetailSheet(
                 }
             }
             
-            // Calculate navigation bar padding
-            val navigationBarPadding = with(density) {
-                WindowInsets.navigationBars.getBottom(this).toDp()
-            }
-            
-            // Main content container
+            // Main content container with layered toolbar
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (isFullscreen) {
-                            Modifier.fillMaxHeight()
-                        } else {
-                            Modifier.fillMaxHeight(0.6f) // Default to 60% height
-                        }
-                    )
+                    .fillMaxSize()
                     .background(
                         color = MaterialTheme.colorScheme.surface,
                         shape = if (isFullscreen) {
@@ -182,12 +172,13 @@ fun TaskDetailSheet(
                             RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
                         }
                     )
-                    .padding(bottom = navigationBarPadding)
             ) {
+                // Child 1: Main sheet content
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp)
+                        .padding(bottom = 80.dp) // Bottom padding for toolbar height + 16dp
                 ) {
                     // Drag handle (only show when not fullscreen)
                     if (!isFullscreen) {
@@ -238,62 +229,25 @@ fun TaskDetailSheet(
                         onContentChange = onContentChange,
                         modifier = Modifier.weight(1f)
                     )
-                    
-                    // Bottom space for toolbar
-                    Spacer(modifier = Modifier.height(80.dp))
                 }
-            }
-        }
-
-        // INFO:
-        // ⚠️ WARNING: DO NOT TOUCH THE DIALOG TOOLBAR IMPLEMENTATION BELOW! ⚠️
-        // This Dialog-based toolbar is the ONLY WAY to keep the toolbar stuck at the bottom of the screen
-        // while allowing the BottomSheet content to scroll independently. Any other approach will cause
-        // the toolbar to scroll with the content or interfere with the sheet's drag behavior.
-        // The Dialog overlay with specific window flags is essential for proper positioning.
-        
-        // Calculate IME-aware bottom padding for toolbar positioning
-        val imePadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        val navPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        val basePadding = 24.dp
-        val targetBottom = max(imePadding.value, navPadding.value).dp + basePadding
-        val animatedBottom by animateDpAsState(
-            targetValue = targetBottom,
-            label = "toolbarBottomInset"
-        )
-        
-        Dialog(
-            onDismissRequest = {},
-            properties = DialogProperties(
-                dismissOnClickOutside = false,
-                dismissOnBackPress = false,
-                usePlatformDefaultWidth = false
-            )
-        ) {
-            // Configure dialog window to overlay above BottomSheet
-            (LocalView.current.parent as DialogWindowProvider).window.apply {
-                setDimAmount(0f) // No dimming
-                addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-                addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
-            }
-            
-            // Full-screen container with toolbar at bottom
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.BottomCenter
-            ) {
+                
+                // Child 2: Toolbar overlaid at bottom
                 TaskDetailToolbar(
                     task = task,
                     onToggleDone = onToggleDone,
                     onChangeDue = onChangeDue,
                     onChangePriority = onChangePriority,
                     modifier = Modifier
+                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .padding(bottom = animatedBottom)
+                        .imePadding()
+                        .navigationBarsPadding()
+                        .padding(bottom = 50.dp)
                 )
             }
         }
+
     }
 }
 
