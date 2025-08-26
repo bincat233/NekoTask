@@ -2,6 +2,7 @@ package me.superbear.todolist.ui.main.detail
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,13 +16,27 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -31,6 +46,14 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import android.view.WindowManager
 import me.superbear.todolist.domain.entities.Task
+import me.superbear.todolist.domain.entities.TaskStatus
+import me.superbear.todolist.domain.entities.Priority
+import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerSection
+import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerState
+import kotlinx.datetime.Instant
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * TaskDetailSheet - A bottom sheet for displaying and editing task details
@@ -83,8 +106,13 @@ fun TaskDetailSheet(
             ) {
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Header section placeholder
-                HeaderSection(task = task)
+                // Header section with checkbox, due date, and priority
+                HeaderSection(
+                    task = task,
+                    onToggleDone = onToggleDone,
+                    onChangeDue = onChangeDue,
+                    onChangePriority = onChangePriority
+                )
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
@@ -144,24 +172,213 @@ fun TaskDetailSheet(
 @Composable
 private fun HeaderSection(
     task: Task,
+    onToggleDone: (Task, Boolean) -> Unit,
+    onChangeDue: (Task) -> Unit,
+    onChangePriority: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showPriorityMenu by remember { mutableStateOf(false) }
+    
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(8.dp)
-            ),
-        contentAlignment = Alignment.Center
+            .padding(vertical = 8.dp)
     ) {
-        Text(
-            text = "Header Section - Task ID: ${task.id}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        // Left: Checkbox to toggle task done
+        Checkbox(
+            checked = task.status == TaskStatus.DONE,
+            onCheckedChange = { onToggleDone(task, it) }
+        )
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        // Middle: Due date chip (weighted to take remaining space)
+        DueChip(
+            dueAt = task.dueAt,
+            onClick = { showDatePicker = true },
+            modifier = Modifier.weight(1f)
+        )
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        // Right: Priority flag
+        PriorityFlag(
+            priority = task.priority,
+            onClick = { showPriorityMenu = true }
         )
     }
+    
+    // Due date picker
+    if (showDatePicker) {
+        DateTimePickerSection(
+            state = DateTimePickerState(
+                isVisible = true,
+                selectedDueDateMs = task.dueAt?.toEpochMilliseconds()
+            ),
+            onDateTimeSelected = { timestamp ->
+                onChangeDue(task)
+                showDatePicker = false
+            },
+            onCancel = {
+                showDatePicker = false
+            }
+        )
+    }
+    
+    // Priority menu
+    if (showPriorityMenu) {
+        PriorityDropdown(
+            currentPriority = task.priority,
+            onPrioritySelected = { priority ->
+                onChangePriority(task)
+                showPriorityMenu = false
+            },
+            onDismiss = {
+                showPriorityMenu = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun DueChip(
+    dueAt: Instant?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clickable { onClick() }
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.CalendarToday,
+            contentDescription = "Due date",
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        Spacer(modifier = Modifier.width(6.dp))
+        
+        Text(
+            text = if (dueAt != null) {
+                formatDueDate(dueAt)
+            } else {
+                "No due date"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun PriorityFlag(
+    priority: Priority,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val priorityTint = when (priority) {
+        Priority.HIGH -> Color(0xFFE53935)  // red
+        Priority.MEDIUM -> Color(0xFFFFA000) // amber
+        Priority.LOW -> Color(0xFF43A047)    // green
+        Priority.DEFAULT -> MaterialTheme.colorScheme.onSurface
+    }
+    
+    IconButton(onClick = onClick, modifier = modifier) {
+        Icon(
+            imageVector = Icons.Default.Flag,
+            contentDescription = "Priority",
+            tint = priorityTint
+        )
+    }
+}
+
+@Composable
+private fun PriorityDropdown(
+    currentPriority: Priority,
+    onPrioritySelected: (Priority) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        DropdownMenu(
+            expanded = true,
+            onDismissRequest = onDismiss
+        ) {
+            DropdownMenuItem(
+                text = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(
+                            imageVector = Icons.Default.Flag,
+                            contentDescription = null,
+                            tint = Color(0xFFE53935)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("High") 
+                    } 
+                },
+                onClick = { onPrioritySelected(Priority.HIGH) }
+            )
+            DropdownMenuItem(
+                text = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(
+                            imageVector = Icons.Default.Flag,
+                            contentDescription = null,
+                            tint = Color(0xFFFFA000)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Medium") 
+                    } 
+                },
+                onClick = { onPrioritySelected(Priority.MEDIUM) }
+            )
+            DropdownMenuItem(
+                text = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(
+                            imageVector = Icons.Default.Flag,
+                            contentDescription = null,
+                            tint = Color(0xFF43A047)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Low") 
+                    } 
+                },
+                onClick = { onPrioritySelected(Priority.LOW) }
+            )
+            DropdownMenuItem(
+                text = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(
+                            imageVector = Icons.Default.Flag,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("None") 
+                    } 
+                },
+                onClick = { onPrioritySelected(Priority.DEFAULT) }
+            )
+        }
+    }
+}
+
+private fun formatDueDate(instant: Instant): String {
+    val date = Date(instant.toEpochMilliseconds())
+    val formatter = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
+    return formatter.format(date)
 }
 
 @Composable
