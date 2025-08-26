@@ -9,6 +9,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -80,14 +87,23 @@ import java.util.Date
 import java.util.Locale
 
 /**
+ * Sheet state for TaskDetailSheet
+ */
+enum class SheetState {
+    HIDDEN,
+    HALF_SCREEN,
+    FULL_SCREEN
+}
+
+/**
  * TaskDetailSheet - A dialog-based sheet for displaying and editing task details
  * 
  * Features:
- * - Dialog-based approach with proper window configuration
- * - Fullscreen capability with IME-aware expansion
+ * - Three-state BottomSheet behavior (Hidden, Half-screen, Full-screen)
+ * - Drag gestures for state transitions
+ * - IME-aware expansion with 300ms delay
  * - Outside click dismiss support
  * - No dim background for clean overlay
- * - Navigation bar padding support
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,39 +121,50 @@ fun TaskDetailSheet(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val coroutineScope = rememberCoroutineScope()
+    val screenHeight = configuration.screenHeightDp.dp
+    
+    // Sheet state management
+    var sheetState by remember { mutableStateOf(SheetState.HIDDEN) }
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
     
-    // State to track if dialog should be fullscreen (IME visible or user expanded)
-    var isFullscreen by remember { mutableStateOf(false) }
+    // Initialize sheet state when visible changes
+    LaunchedEffect(visible) {
+        sheetState = if (visible) SheetState.HALF_SCREEN else SheetState.HIDDEN
+    }
     
-    // Auto-expand to fullscreen when IME appears
+    // Auto-expand to fullscreen when IME appears (with 300ms delay)
     LaunchedEffect(imeVisible) {
-        if (visible && imeVisible) {
-            Log.d("TaskDetailSheet", "IME visible, expanding to fullscreen")
-            isFullscreen = true
-        } else if (visible && !imeVisible) {
-            // When IME hides, we can choose to stay fullscreen or collapse
-            // For now, let's keep it fullscreen once expanded
-            Log.d("TaskDetailSheet", "IME hidden")
+        if (visible && imeVisible && sheetState != SheetState.FULL_SCREEN) {
+            delay(300) // 300ms delay as requested
+            if (imeVisible) { // Check again in case IME was dismissed during delay
+                Log.d("TaskDetailSheet", "IME visible, expanding to fullscreen after 300ms")
+                sheetState = SheetState.FULL_SCREEN
+            }
         }
     }
     
-    // Reset fullscreen state when dialog is dismissed
-    LaunchedEffect(visible) {
-        if (!visible) {
-            isFullscreen = false
+    // Handle state changes
+    LaunchedEffect(sheetState) {
+        if (sheetState == SheetState.HIDDEN) {
+            onDismiss()
         }
     }
     
     // Handle back button when sheet is visible
-    BackHandler(enabled = visible) {
-        onDismiss()
+    BackHandler(enabled = sheetState != SheetState.HIDDEN) {
+        when (sheetState) {
+            SheetState.FULL_SCREEN -> sheetState = SheetState.HALF_SCREEN
+            SheetState.HALF_SCREEN -> sheetState = SheetState.HIDDEN
+            SheetState.HIDDEN -> { /* No action */ }
+        }
     }
 
 
-    if (visible && task != null) {
+    if (sheetState != SheetState.HIDDEN && task != null) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = { sheetState = SheetState.HIDDEN },
             properties = DialogProperties(
                 dismissOnClickOutside = true,
                 dismissOnBackPress = true,
@@ -152,10 +179,10 @@ fun TaskDetailSheet(
                 // Set layout parameters for proper positioning
                 attributes = attributes.apply {
                     width = WindowManager.LayoutParams.MATCH_PARENT
-                    height = if (isFullscreen) {
-                        WindowManager.LayoutParams.MATCH_PARENT
-                    } else {
-                        WindowManager.LayoutParams.WRAP_CONTENT
+                    height = when (sheetState) {
+                        SheetState.FULL_SCREEN -> WindowManager.LayoutParams.MATCH_PARENT
+                        SheetState.HALF_SCREEN -> WindowManager.LayoutParams.WRAP_CONTENT
+                        SheetState.HIDDEN -> WindowManager.LayoutParams.WRAP_CONTENT
                     }
                 }
             }
@@ -163,10 +190,17 @@ fun TaskDetailSheet(
             // Main content container with layered toolbar
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .then(
+                        when (sheetState) {
+                            SheetState.FULL_SCREEN -> Modifier.fillMaxSize()
+                            SheetState.HALF_SCREEN -> Modifier.fillMaxHeight(0.6f)
+                            SheetState.HIDDEN -> Modifier.fillMaxHeight(0f)
+                        }
+                    )
                     .background(
                         color = MaterialTheme.colorScheme.surface,
-                        shape = if (isFullscreen) {
+                        shape = if (sheetState == SheetState.FULL_SCREEN) {
                             RoundedCornerShape(0.dp)
                         } else {
                             RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
@@ -180,30 +214,68 @@ fun TaskDetailSheet(
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 80.dp) // Bottom padding for toolbar height + 16dp
                 ) {
-                    // Drag handle (only show when not fullscreen)
-                    if (!isFullscreen) {
+                    // Drag handle (always show, but different behavior based on state)
+                    var totalDragAmount by remember { mutableStateOf(0f) }
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .pointerInput(sheetState) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        totalDragAmount = 0f
+                                    },
+                                    onDragEnd = {
+                                        val dragThreshold = 150f
+                                        
+                                        when (sheetState) {
+                                            SheetState.HALF_SCREEN -> {
+                                                if (totalDragAmount > dragThreshold) {
+                                                    // Drag down to dismiss
+                                                    sheetState = SheetState.HIDDEN
+                                                } else if (totalDragAmount < -dragThreshold) {
+                                                    // Drag up to fullscreen
+                                                    sheetState = SheetState.FULL_SCREEN
+                                                }
+                                            }
+                                            SheetState.FULL_SCREEN -> {
+                                                if (totalDragAmount > dragThreshold) {
+                                                    // Drag down to half screen
+                                                    sheetState = SheetState.HALF_SCREEN
+                                                }
+                                            }
+                                            SheetState.HIDDEN -> { /* No action */ }
+                                        }
+                                        totalDragAmount = 0f
+                                    }
+                                ) { change, dragAmount ->
+                                    // Accumulate drag amount
+                                    totalDragAmount += dragAmount.y
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(32.dp)
-                                    .height(4.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                        shape = RoundedCornerShape(2.dp)
-                                    )
-                                    .clickable {
-                                        isFullscreen = true
+                                .width(32.dp)
+                                .height(4.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(2.dp)
+                                )
+                                .clickable {
+                                    // Tap to toggle between half and full screen
+                                    sheetState = when (sheetState) {
+                                        SheetState.HALF_SCREEN -> SheetState.FULL_SCREEN
+                                        SheetState.FULL_SCREEN -> SheetState.HALF_SCREEN
+                                        SheetState.HIDDEN -> SheetState.HALF_SCREEN
                                     }
-                            )
-                        }
+                                }
+                        )
                     }
                     
-                    Spacer(modifier = Modifier.height(if (isFullscreen) 16.dp else 8.dp))
+                    Spacer(modifier = Modifier.height(if (sheetState == SheetState.FULL_SCREEN) 16.dp else 8.dp))
                     
                     // Header section with checkbox, due date, and priority
                     HeaderSection(
