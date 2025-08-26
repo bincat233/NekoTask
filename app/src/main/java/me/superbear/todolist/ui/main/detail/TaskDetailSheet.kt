@@ -59,12 +59,15 @@ import androidx.compose.ui.window.DialogWindowProvider
 import android.view.WindowManager
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material3.SheetValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.animateDpAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlin.math.max
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
 import me.superbear.todolist.domain.entities.Priority
@@ -200,6 +203,17 @@ fun TaskDetailSheet(
         // while allowing the BottomSheet content to scroll independently. Any other approach will cause
         // the toolbar to scroll with the content or interfere with the sheet's drag behavior.
         // The Dialog overlay with specific window flags is essential for proper positioning.
+        
+        // Calculate IME-aware bottom padding for toolbar positioning
+        val imePadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val navPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val basePadding = 24.dp
+        val targetBottom = max(imePadding.value, navPadding.value).dp + basePadding
+        val animatedBottom by animateDpAsState(
+            targetValue = targetBottom,
+            label = "toolbarBottomInset"
+        )
+        
         Dialog(
             onDismissRequest = {},
             properties = DialogProperties(
@@ -227,8 +241,8 @@ fun TaskDetailSheet(
                     onChangePriority = onChangePriority,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
-                        .padding(bottom = 32.dp)
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = animatedBottom)
                 )
             }
         }
