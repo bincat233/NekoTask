@@ -108,6 +108,54 @@ interface TaskDao {
     suspend fun updateStatus(id: Long, status: TaskStatus, updatedAt: Long): Int
 
     /**
+     * Updates only the title and updatedAt fields of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param title New task title
+     * @param updatedAt Updated timestamp (epoch milliseconds)
+     * @return Number of rows updated
+     */
+    @Query("UPDATE tasks SET title = :title, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateTitle(id: Long, title: String, updatedAt: Long): Int
+
+    /**
+     * Updates only the content and updatedAt fields of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param content New task content
+     * @param updatedAt Updated timestamp (epoch milliseconds)
+     * @return Number of rows updated
+     */
+    @Query("UPDATE tasks SET content = :content, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateContent(id: Long, content: String?, updatedAt: Long): Int
+
+    /**
+     * Updates only the dueAt and updatedAt fields of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param dueAt New due date timestamp (epoch milliseconds, null for no due date)
+     * @param updatedAt Updated timestamp (epoch milliseconds)
+     * @return Number of rows updated
+     */
+    @Query("UPDATE tasks SET due_at = :dueAt, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateDueAt(id: Long, dueAt: Long?, updatedAt: Long): Int
+
+    /**
+     * Updates only the priority and updatedAt fields of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param priority New task priority
+     * @param updatedAt Updated timestamp (epoch milliseconds)
+     * @return Number of rows updated
+     */
+    @Query("UPDATE tasks SET priority = :priority, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updatePriority(id: Long, priority: me.superbear.todolist.domain.entities.Priority, updatedAt: Long): Int
+
+    /**
      * Deletes a task by its ID.
      * 
      * @param id Task ID to delete

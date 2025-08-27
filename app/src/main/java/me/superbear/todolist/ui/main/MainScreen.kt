@@ -296,13 +296,13 @@ fun MainScreen(
         TaskDetailSheet(
             visible = state.taskDetailState.isVisible,
             task = viewModel.getSelectedTask(),
-            title = viewModel.getSelectedTask()?.title ?: "",
+            title = state.taskDetailState.editedTitle,
             onTitleChange = { newTitle ->
-                // TODO: Update task title
+                onEvent(AppEvent.TaskDetail(TaskDetailEvent.EditTitle(newTitle)))
             },
-            content = viewModel.getSelectedTask()?.content ?: "",
+            content = state.taskDetailState.editedContent,
             onContentChange = { newContent ->
-                // TODO: Update task content
+                onEvent(AppEvent.TaskDetail(TaskDetailEvent.EditContent(newContent)))
             },
             onDismiss = {
                 onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
@@ -312,10 +312,17 @@ fun MainScreen(
                 onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
             },
             onChangeDue = { task ->
-                // TODO: 打开日期时间选择器
+                // 打开日期时间选择器
+                onEvent(AppEvent.DateTimePicker(
+                    me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Open
+                ))
             },
-            onChangePriority = { task ->
-                // TODO: 打开优先级选择器
+            onChangePriority = { task, priority ->
+                // 更新任务优先级 (task.id为null表示是顶级task，使用selectedTaskId)
+                val taskId = task.id ?: state.taskDetailState.selectedTaskId
+                taskId?.let { id ->
+                    onEvent(AppEvent.TaskDetail(TaskDetailEvent.UpdatePriority(id, priority)))
+                }
             }
         )
 
@@ -327,6 +334,10 @@ fun MainScreen(
                 // 设置截止时间并关闭
                 onEvent(AppEvent.DateTimePicker(
                     me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.SetDueDate(timestamp)
+                ))
+                // 自动关闭日期选择器
+                onEvent(AppEvent.DateTimePicker(
+                    me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Close
                 ))
             },
             onCancel = {

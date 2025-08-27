@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -117,7 +118,7 @@ fun TaskDetailSheet(
     onDismiss: () -> Unit,
     onToggleDone: (Task, Boolean) -> Unit,
     onChangeDue: (Task) -> Unit,
-    onChangePriority: (Task) -> Unit,
+    onChangePriority: (Task, Priority) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -330,10 +331,9 @@ private fun HeaderSection(
     task: Task,
     onToggleDone: (Task, Boolean) -> Unit,
     onChangeDue: (Task) -> Unit,
-    onChangePriority: (Task) -> Unit,
+    onChangePriority: (Task, Priority) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showDatePicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
     
     Row(
@@ -343,9 +343,26 @@ private fun HeaderSection(
             .padding(vertical = 8.dp)
     ) {
         // Left: Checkbox to toggle task done
+        val checkboxColors = CheckboxDefaults.colors(
+            checkedColor = when (task.priority) {
+                Priority.HIGH -> Color(0xFFE53935)     // red
+                Priority.MEDIUM -> Color(0xFFFFA000)   // amber
+                Priority.LOW -> Color(0xFF43A047)      // green
+                Priority.DEFAULT -> MaterialTheme.colorScheme.primary
+            },
+            uncheckedColor = when (task.priority) {
+                Priority.HIGH -> Color(0xFFE53935)     // red
+                Priority.MEDIUM -> Color(0xFFFFA000)   // amber
+                Priority.LOW -> Color(0xFF43A047)      // green
+                Priority.DEFAULT -> MaterialTheme.colorScheme.onSurface
+            },
+            checkmarkColor = Color.White
+        )
+        
         Checkbox(
             checked = task.status == TaskStatus.DONE,
-            onCheckedChange = { onToggleDone(task, it) }
+            onCheckedChange = { onToggleDone(task, it) },
+            colors = checkboxColors
         )
         
         Spacer(modifier = Modifier.width(12.dp))
@@ -353,48 +370,33 @@ private fun HeaderSection(
         // Middle: Due date chip (weighted to take remaining space)
         DueChip(
             dueAt = task.dueAt,
-            onClick = { showDatePicker = true },
+            onClick = { onChangeDue(task) },
             modifier = Modifier.weight(1f)
         )
         
         Spacer(modifier = Modifier.width(12.dp))
         
-        // Right: Priority flag
-        PriorityFlag(
-            priority = task.priority,
-            onClick = { showPriorityMenu = true }
-        )
-    }
-    
-    // Due date picker
-    if (showDatePicker) {
-        DateTimePickerSection(
-            state = DateTimePickerState(
-                isVisible = true,
-                selectedDueDateMs = task.dueAt?.toEpochMilliseconds()
-            ),
-            onDateTimeSelected = { timestamp ->
-                onChangeDue(task)
-                showDatePicker = false
-            },
-            onCancel = {
-                showDatePicker = false
+        // Right: Priority flag with dropdown menu
+        Box {
+            PriorityFlag(
+                priority = task.priority,
+                onClick = { showPriorityMenu = true }
+            )
+            
+            // Priority menu positioned relative to the flag
+            if (showPriorityMenu) {
+                PriorityDropdown(
+                    currentPriority = task.priority,
+                    onPrioritySelected = { priority ->
+                        onChangePriority(task, priority)
+                        showPriorityMenu = false
+                    },
+                    onDismiss = {
+                        showPriorityMenu = false
+                    }
+                )
             }
-        )
-    }
-    
-    // Priority menu
-    if (showPriorityMenu) {
-        PriorityDropdown(
-            currentPriority = task.priority,
-            onPrioritySelected = { priority ->
-                onChangePriority(task)
-                showPriorityMenu = false
-            },
-            onDismiss = {
-                showPriorityMenu = false
-            }
-        )
+        }
     }
 }
 
@@ -573,13 +575,8 @@ private fun ContentSection(
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+    val focusManager = LocalFocusManager.current
     
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
         TextField(
             value = content,
             onValueChange = onContentChange,
@@ -590,9 +587,13 @@ private fun ContentSection(
             keyboardOptions = KeyboardOptions(
                 imeAction = ImeAction.Default
             ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    focusManager.clearFocus()
+                }
+            ),
             modifier = Modifier.fillMaxWidth()
         )
-    }
 }
 
 
@@ -601,7 +602,7 @@ fun TaskDetailToolbar(
     task: Task,
     onToggleDone: (Task, Boolean) -> Unit,
     onChangeDue: (Task) -> Unit,
-    onChangePriority: (Task) -> Unit,
+    onChangePriority: (Task, Priority) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(

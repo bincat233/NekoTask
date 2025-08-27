@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
@@ -53,6 +55,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         assistantActionParser = AssistantActionParser()
     )
     private val json = Json { prettyPrint = true }
+    
+    // 防抖机制：避免过于频繁的数据库写入
+    private var titleUpdateJob: Job? = null
+    private var contentUpdateJob: Job? = null
+    private val debounceDelayMs = 300L // 300ms 防抖延迟
     
     // Root state using new AppState structure
     private val _appState = MutableStateFlow(
@@ -306,11 +313,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val detail = _appState.value.taskDetailState
                 val taskId = detail.selectedTaskId
                 if (detail.isVisible && taskId != null && event.timestamp != null) {
-                    val id = taskId
                     viewModelScope.launch {
                         try {
-                            todoRepository.updateTask(id, dueAt = Instant.fromEpochMilliseconds(event.timestamp))
-                        } catch (_: Exception) {}
+                            val dueAt = Instant.fromEpochMilliseconds(event.timestamp)
+                            val updatedAt = Clock.System.now().toEpochMilliseconds()
+                            todoRepository.updateDueAt(taskId, dueAt, updatedAt)
+                            Log.d("MainViewModel", "Updated task due date: $taskId -> $dueAt")
+                        } catch (e: Exception) {
+                            Log.e("MainViewModel", "Failed to update task due date: $taskId", e)
+                        }
                     }
                 }
                 _appState.update { currentState ->
@@ -348,10 +359,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleTaskDetailEvent(event: TaskDetailEvent) {
         when (event) {
             is TaskDetailEvent.ShowDetail -> {
-                _appState.update { it.copy(taskDetailState = it.taskDetailState.copy(isVisible = true, selectedTaskId = event.taskId)) }
+                val task = _appState.value.taskState.items.find { it.id == event.taskId }
+                _appState.update { 
+                    it.copy(
+                        taskDetailState = it.taskDetailState.copy(
+                            isVisible = true, 
+                            selectedTaskId = event.taskId,
+                            editedTitle = task?.title ?: "",
+                            editedContent = task?.content ?: ""
+                        )
+                    ) 
+                }
             }
             is TaskDetailEvent.HideDetail -> {
-                _appState.update { it.copy(taskDetailState = it.taskDetailState.copy(isVisible = false, selectedTaskId = null)) }
+                _appState.update { 
+                    it.copy(
+                        taskDetailState = it.taskDetailState.copy(
+                            isVisible = false, 
+                            selectedTaskId = null,
+                            editedTitle = "",
+                            editedContent = ""
+                        )
+                    ) 
+                }
+            }
+            is TaskDetailEvent.EditTitle -> {
+                // 立即更新UI状态
+                _appState.update { 
+                    it.copy(
+                        taskDetailState = it.taskDetailState.copy(editedTitle = event.title)
+                    ) 
+                }
+                // 随输随存：防抖保存到数据库
+                debouncedTitleUpdate(event.title)
+            }
+            is TaskDetailEvent.EditContent -> {
+                // 立即更新UI状态
+                _appState.update { 
+                    it.copy(
+                        taskDetailState = it.taskDetailState.copy(editedContent = event.content)
+                    ) 
+                }
+                // 随输随存：防抖保存到数据库
+                debouncedContentUpdate(event.content)
+            }
+            is TaskDetailEvent.UpdatePriority -> {
+                // 更新任务优先级
+                viewModelScope.launch {
+                    try {
+                        val updatedAt = Clock.System.now().toEpochMilliseconds()
+                        todoRepository.updatePriority(event.taskId, event.priority, updatedAt)
+                        Log.d("MainViewModel", "Updated task priority: ${event.taskId} -> ${event.priority}")
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Failed to update task priority: ${event.taskId}", e)
+                    }
+                }
             }
         }
     }
@@ -362,6 +424,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val id = task.id ?: return
         viewModelScope.launch {
             todoRepository.toggleTaskStatus(id, newDone)
+        }
+    }
+
+
+    /**
+     * 防抖更新标题：取消之前的更新任务，延迟后执行新的更新
+     */
+    private fun debouncedTitleUpdate(newTitle: String) {
+        val selectedTaskId = _appState.value.taskDetailState.selectedTaskId ?: return
+        
+        // 取消之前的更新任务
+        titleUpdateJob?.cancel()
+        
+        // 启动新的防抖更新任务
+        titleUpdateJob = viewModelScope.launch {
+            delay(debounceDelayMs)
+            
+            // 检查任务是否仍然选中且标题确实有变化
+            val currentState = _appState.value.taskDetailState
+            if (currentState.selectedTaskId == selectedTaskId) {
+                val originalTask = _appState.value.taskState.items.find { it.id == selectedTaskId }
+                if (originalTask != null && originalTask.title != newTitle) {
+                    val updatedAt = Clock.System.now().toEpochMilliseconds()
+                    todoRepository.updateTitle(selectedTaskId, newTitle, updatedAt)
+                    Log.d("MainViewModel", "Auto-saved title: $newTitle")
+                }
+            }
+        }
+    }
+
+    /**
+     * 防抖更新内容：取消之前的更新任务，延迟后执行新的更新
+     */
+    private fun debouncedContentUpdate(newContent: String) {
+        val selectedTaskId = _appState.value.taskDetailState.selectedTaskId ?: return
+        
+        // 取消之前的更新任务
+        contentUpdateJob?.cancel()
+        
+        // 启动新的防抖更新任务
+        contentUpdateJob = viewModelScope.launch {
+            delay(debounceDelayMs)
+            
+            // 检查任务是否仍然选中且内容确实有变化
+            val currentState = _appState.value.taskDetailState
+            if (currentState.selectedTaskId == selectedTaskId) {
+                val originalTask = _appState.value.taskState.items.find { it.id == selectedTaskId }
+                if (originalTask != null && originalTask.content != newContent) {
+                    val updatedAt = Clock.System.now().toEpochMilliseconds()
+                    todoRepository.updateContent(selectedTaskId, newContent.takeIf { it.isNotBlank() }, updatedAt)
+                    Log.d("MainViewModel", "Auto-saved content")
+                }
+            }
         }
     }
 

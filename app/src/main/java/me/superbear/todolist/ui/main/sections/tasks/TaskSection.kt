@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +45,7 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import me.superbear.todolist.R
+import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
 
@@ -159,9 +161,26 @@ private fun ParentTaskCard(
                 ),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val checkboxColors = CheckboxDefaults.colors(
+                checkedColor = when (task.priority) {
+                    Priority.HIGH -> Color(0xFFE53935)     // red
+                    Priority.MEDIUM -> Color(0xFFFFA000)   // amber
+                    Priority.LOW -> Color(0xFF43A047)      // green
+                    Priority.DEFAULT -> MaterialTheme.colorScheme.primary
+                },
+                uncheckedColor = when (task.priority) {
+                    Priority.HIGH -> Color(0xFFE53935)     // red
+                    Priority.MEDIUM -> Color(0xFFFFA000)   // amber
+                    Priority.LOW -> Color(0xFF43A047)      // green
+                    Priority.DEFAULT -> MaterialTheme.colorScheme.onSurface
+                },
+                checkmarkColor = Color.White
+            )
+            
             Checkbox(
                 checked = task.status == TaskStatus.DONE,
                 onCheckedChange = { onToggleParent() },
+                colors = checkboxColors
             )
             Text(
                 text = task.title,
@@ -211,9 +230,26 @@ private fun ParentTaskCard(
                             .padding(start = subtaskTabWidth),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val childCheckboxColors = CheckboxDefaults.colors(
+                            checkedColor = when (child.priority) {
+                                Priority.HIGH -> Color(0xFFE53935)     // red
+                                Priority.MEDIUM -> Color(0xFFFFA000)   // amber
+                                Priority.LOW -> Color(0xFF43A047)      // green
+                                Priority.DEFAULT -> MaterialTheme.colorScheme.primary
+                            },
+                            uncheckedColor = when (child.priority) {
+                                Priority.HIGH -> Color(0xFFE53935)     // red
+                                Priority.MEDIUM -> Color(0xFFFFA000)   // amber
+                                Priority.LOW -> Color(0xFF43A047)      // green
+                                Priority.DEFAULT -> MaterialTheme.colorScheme.onSurface
+                            },
+                            checkmarkColor = Color.White
+                        )
+                        
                         Checkbox(
                             checked = child.status == TaskStatus.DONE,
-                            onCheckedChange = { checked -> child.id?.let { onToggleSubtask(it, checked) } }
+                            onCheckedChange = { checked -> child.id?.let { onToggleSubtask(it, checked) } },
+                            colors = childCheckboxColors
                         )
                         Text(
                             text = child.title,

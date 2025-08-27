@@ -429,4 +429,110 @@ class TodoRepository(private val context: Context) {
             }
         }
     }
+
+    /**
+     * Update only the title of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param title New title
+     * @param updatedAt Updated timestamp
+     */
+    suspend fun updateTitle(id: Long, title: String, updatedAt: Long) {
+        try {
+            val rowsUpdated = database.taskDao().updateTitle(id, title, updatedAt)
+            if (rowsUpdated > 0) {
+                Log.d("TodoRepository", "Updated task title: $id -> $title")
+            } else {
+                Log.w("TodoRepository", "Task not found for title update: $id")
+            }
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to update task title: $id", e)
+        }
+    }
+
+    /**
+     * Update only the content of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param content New content
+     * @param updatedAt Updated timestamp
+     */
+    suspend fun updateContent(id: Long, content: String?, updatedAt: Long) {
+        try {
+            val rowsUpdated = database.taskDao().updateContent(id, content, updatedAt)
+            if (rowsUpdated > 0) {
+                Log.d("TodoRepository", "Updated task content: $id")
+            } else {
+                Log.w("TodoRepository", "Task not found for content update: $id")
+            }
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to update task content: $id", e)
+        }
+    }
+
+    /**
+     * Update only the status of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param status New status
+     * @param updatedAt Updated timestamp
+     */
+    suspend fun updateStatus(id: Long, status: TaskStatus, updatedAt: Long) {
+        try {
+            val rowsUpdated = database.taskDao().updateStatus(id, status, updatedAt)
+            if (rowsUpdated > 0) {
+                Log.d("TodoRepository", "Updated task status: $id -> $status")
+            } else {
+                Log.w("TodoRepository", "Task not found for status update: $id")
+            }
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to update task status: $id", e)
+        }
+    }
+
+    /**
+     * Update only the due date of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param dueAt New due date (null for no due date)
+     * @param updatedAt Updated timestamp
+     */
+    suspend fun updateDueAt(id: Long, dueAt: Instant?, updatedAt: Long) {
+        try {
+            val dueAtMs = dueAt?.toEpochMilliseconds()
+            val rowsUpdated = database.taskDao().updateDueAt(id, dueAtMs, updatedAt)
+            if (rowsUpdated > 0) {
+                Log.d("TodoRepository", "Updated task due date: $id -> $dueAt")
+            } else {
+                Log.w("TodoRepository", "Task not found for due date update: $id")
+            }
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to update task due date: $id", e)
+        }
+    }
+
+    /**
+     * Update only the priority of a task.
+     * More efficient than updating the entire entity.
+     * 
+     * @param id Task ID to update
+     * @param priority New priority
+     * @param updatedAt Updated timestamp
+     */
+    suspend fun updatePriority(id: Long, priority: Priority, updatedAt: Long) {
+        try {
+            val rowsUpdated = database.taskDao().updatePriority(id, priority, updatedAt)
+            if (rowsUpdated > 0) {
+                Log.d("TodoRepository", "Updated task priority: $id -> $priority")
+            } else {
+                Log.w("TodoRepository", "Task not found for priority update: $id")
+            }
+        } catch (e: Exception) {
+            Log.e("TodoRepository", "Failed to update task priority: $id", e)
+        }
+    }
 }
