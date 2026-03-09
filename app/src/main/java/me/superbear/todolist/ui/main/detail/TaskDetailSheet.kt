@@ -185,10 +185,9 @@ fun TaskDetailSheet(
     LaunchedEffect(imeVisible) {
         if (visible && imeVisible && sheetState != SheetState.FULL_SCREEN) {
             delay(300) // 300ms delay as requested
-            if (imeVisible) { // Check again in case IME was dismissed during delay
-                Log.d("TaskDetailSheet", "IME visible, expanding to fullscreen after 300ms")
-                sheetState = SheetState.FULL_SCREEN
-            }
+            // Check again in case IME was dismissed during delay
+            Log.d("TaskDetailSheet", "IME visible, expanding to fullscreen after 300ms")
+            sheetState = SheetState.FULL_SCREEN
         }
     }
     
@@ -234,7 +233,7 @@ fun TaskDetailSheet(
                 }
             }
             
-            // Full screen container with custom background overlay
+            // Layer 1: Full-screen container that hosts overlay + sheet
             Box(modifier = Modifier.fillMaxSize()) {
                 // Background overlay with animated alpha
                 val overlayAlpha by animateFloatAsState(
@@ -243,6 +242,7 @@ fun TaskDetailSheet(
                     label = "overlayAlpha"
                 )
 
+                // Layer 2: Dimming overlay (only visible in half-screen)
                 if (overlayAlpha > 0f) {
                     Box(
                         modifier = Modifier
@@ -264,7 +264,7 @@ fun TaskDetailSheet(
                     animatedHeightFraction
                 }
 
-                // Main content container with layered toolbar
+                // Layer 3: Sheet surface (content + toolbar)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -295,15 +295,12 @@ fun TaskDetailSheet(
                             // Do nothing - this prevents clicks inside the card from closing the sheet
                         }
             ) {
-                // Child 1: Main sheet content
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp)
-                        .padding(bottom = 80.dp) // Bottom padding for toolbar height + 16dp
                 ) {
-                    // Drag handle with smooth real-time dragging
+                    // Child 3.1: Drag handle
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -372,7 +369,13 @@ fun TaskDetailSheet(
                                 }
                         )
                     }
-                    
+
+                    // Child 3.2: Scrollable sheet content
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                    ) {
                     Spacer(modifier = Modifier.height(if (sheetState == SheetState.FULL_SCREEN) 16.dp else 8.dp))
                     
                     // Header section with checkbox, due date, and priority
@@ -410,26 +413,26 @@ fun TaskDetailSheet(
                         content = content,
                         onContentChange = onContentChange
                     )
+                    }
+                    
+                    // Child 3.3: Toolbar (stacked below content)
+                    TaskDetailToolbar(
+                        task = task,
+                        onToggleDone = onToggleDone,
+                        onChangeDue = onChangeDue,
+                        onChangePriority = onChangePriority,
+                        onAddSubtask = onAddSubtask,
+                        onDivideSubtasks = onDivideSubtasks,
+                        onDeleteTask = onDeleteTask,
+                        isSubtaskDivisionLoading = isSubtaskDivisionLoading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            //.padding(top = 16.dp)
+                            //.imePadding()
+                            //.navigationBarsPadding()
+                            //.padding(bottom = 16.dp)
+                    )
                 }
-                
-                // Child 2: Toolbar overlaid at bottom
-                TaskDetailToolbar(
-                    task = task,
-                    onToggleDone = onToggleDone,
-                    onChangeDue = onChangeDue,
-                    onChangePriority = onChangePriority,
-                    onAddSubtask = onAddSubtask,
-                    onDivideSubtasks = onDivideSubtasks,
-                    onDeleteTask = onDeleteTask,
-                    isSubtaskDivisionLoading = isSubtaskDivisionLoading,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .imePadding()
-                        .navigationBarsPadding()
-                        .padding(bottom = 50.dp)
-                )
             }
             }
         }
@@ -684,6 +687,9 @@ private fun TitleSection(
     )
 }
 
+/**
+ * Renders multiline content editor with transparent styling and focus handling
+ */
 @Composable
 private fun ContentSection(
     content: String,
@@ -720,6 +726,19 @@ private fun ContentSection(
 }
 
 
+/**
+ * Composable function for rendering a toolbar with various task management actions.
+ *
+ * @param task The task associated with the toolbar. Contains data such as ID, title, priority, and more.
+ * @param onToggleDone Callback to toggle the task's completion status. Invoked with the updated task and status.
+ * @param onChangeDue Callback to modify the due date of the task.
+ * @param onChangePriority Callback to update the task's priority. Invoked with the task and the new priority value.
+ * @param onAddSubtask Callback to add a new subtask. Invoked with the parent task ID, new subtask title, and order in the parent (optional).
+ * @param onDivideSubtasks Callback to divide the task into subtasks using AI. Invoked with the task ID.
+ * @param onDeleteTask Callback to delete the task. Invoked with the task to be deleted.
+ * @param isSubtaskDivisionLoading Boolean indicating whether the AI subtask division process is currently loading.
+ * @param modifier Modifier for customizing the layout or appearance of the toolbar.
+ */
 @Composable
 fun TaskDetailToolbar(
     task: Task,
@@ -732,7 +751,8 @@ fun TaskDetailToolbar(
     isSubtaskDivisionLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    
+
+    // Tool Bar floating under all UI
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -771,7 +791,8 @@ fun TaskDetailToolbar(
         }
         
         Spacer(modifier = Modifier.width(12.dp))
-        
+
+        // Add subtask button
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -795,7 +816,8 @@ fun TaskDetailToolbar(
         }
         
         Spacer(modifier = Modifier.width(12.dp))
-        
+
+        // Set Reminder Button
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -859,7 +881,7 @@ private fun SubtasksSection(
     }
     
     Column(modifier = modifier.fillMaxWidth()) {
-        // Section header
+        // Section header "Subtasks (2)"
         Text(
             text = "Subtasks (${subtasks.size})",
             style = MaterialTheme.typography.titleSmall,
