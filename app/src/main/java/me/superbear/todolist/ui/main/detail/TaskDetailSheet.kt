@@ -1,32 +1,12 @@
 package me.superbear.todolist.ui.main.detail
 
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.firstOrNull
-import android.util.Log
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,17 +14,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,78 +33,43 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import android.view.WindowManager
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.navigationBars
-import android.view.Gravity
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.animation.core.animateDpAsState
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlin.math.max
+import kotlinx.coroutines.launch
+import kotlinx.datetime.Instant
+import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
-import me.superbear.todolist.domain.entities.Priority
-import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerSection
-import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerState
-import me.superbear.todolist.assistant.subtask.DivisionStrategy
-import kotlinx.datetime.Instant
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Sheet state for TaskDetailSheet
- */
-enum class SheetState {
-    HIDDEN,
-    HALF_SCREEN,
-    FULL_SCREEN
-}
-
-/**
- * TaskDetailSheet - A dialog-based sheet for displaying and editing task details
- * 
- * Features:
- * - Three-state BottomSheet behavior (Hidden, Half-screen, Full-screen)
- * - Drag gestures for state transitions
- * - IME-aware expansion with 300ms delay
- * - Outside click dismiss support
- * - No dim background for clean overlay
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskDetailSheet(
@@ -149,294 +93,97 @@ fun TaskDetailSheet(
     isSubtaskDivisionLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val coroutineScope = rememberCoroutineScope()
-    val screenHeight = configuration.screenHeightDp.dp
-    
-    // Sheet state management
-    var sheetState by remember { mutableStateOf(SheetState.HIDDEN) }
-    val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
-    // Drag offset in pixels
-    var dragOffsetY by remember { mutableStateOf(0f) }
-    var isDragging by remember { mutableStateOf(false) }
-
-    // Calculate animated height based on state
-    val targetHeightFraction = when (sheetState) {
-        SheetState.FULL_SCREEN -> 1f
-        SheetState.HALF_SCREEN -> 0.6f
-        SheetState.HIDDEN -> 0f
-    }
-
-    val animatedHeightFraction by animateFloatAsState(
-        targetValue = targetHeightFraction,
-        animationSpec = tween(durationMillis = 300),
-        label = "sheetHeight"
-    )
-
-    // Initialize sheet state when visible changes
-    LaunchedEffect(visible) {
-        sheetState = if (visible) SheetState.HALF_SCREEN else SheetState.HIDDEN
-        dragOffsetY = 0f
-    }
-    
-    // Auto-expand to fullscreen when IME appears (with 300ms delay)
-    LaunchedEffect(imeVisible) {
-        if (visible && imeVisible && sheetState != SheetState.FULL_SCREEN) {
-            delay(300) // 300ms delay as requested
-            // Check again in case IME was dismissed during delay
-            Log.d("TaskDetailSheet", "IME visible, expanding to fullscreen after 300ms")
-            sheetState = SheetState.FULL_SCREEN
-        }
-    }
-    
-    // Handle state changes
-    LaunchedEffect(sheetState) {
-        if (sheetState == SheetState.HIDDEN) {
-            onDismiss()
-        }
-    }
-    
-    // Handle back button when sheet is visible
-    BackHandler(enabled = sheetState != SheetState.HIDDEN) {
-        when (sheetState) {
-            SheetState.FULL_SCREEN -> sheetState = SheetState.HALF_SCREEN
-            SheetState.HALF_SCREEN -> sheetState = SheetState.HIDDEN
-            SheetState.HIDDEN -> { /* No action */ }
-        }
-    }
-
-
-    if (sheetState != SheetState.HIDDEN && task != null) {
-        Dialog(
-            onDismissRequest = { sheetState = SheetState.HIDDEN },
-            properties = DialogProperties(
-                dismissOnClickOutside = true,
-                dismissOnBackPress = true,
-                usePlatformDefaultWidth = false
-            )
-        ) {
-            // Configure dialog window properties
-            (LocalView.current.parent as DialogWindowProvider).window.apply {
-                setGravity(Gravity.BOTTOM)
-                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND) // Remove default dim background
-                
-                // Set layout parameters for proper positioning
-                attributes = attributes.apply {
-                    width = WindowManager.LayoutParams.MATCH_PARENT
-                    height = when (sheetState) {
-                        SheetState.FULL_SCREEN -> WindowManager.LayoutParams.MATCH_PARENT
-                        SheetState.HALF_SCREEN -> WindowManager.LayoutParams.WRAP_CONTENT
-                        SheetState.HIDDEN -> WindowManager.LayoutParams.WRAP_CONTENT
-                    }
-                }
+    BackHandler(enabled = visible) {
+        coroutineScope.launch {
+            if (sheetState.currentValue == SheetValue.Expanded) {
+                sheetState.partialExpand()
+            } else {
+                sheetState.hide()
+                onDismiss()
             }
-            
-            // Layer 1: Full-screen container that hosts overlay + sheet
-            Box(modifier = Modifier.fillMaxSize()) {
-                // Background overlay with animated alpha
-                val overlayAlpha by animateFloatAsState(
-                    targetValue = if (sheetState == SheetState.HALF_SCREEN) 0.5f else 0f,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "overlayAlpha"
+        }
+    }
+
+    if (visible && task != null) {
+        // ModalBottomSheet：Material3 原生底部弹窗，自带拖拽手柄、遮罩、动画。
+        // 内容 lambda 是一个 ColumnScope，子元素从上到下排列，高度受弹窗面板约束。
+        // 面板高度：半屏时 ≈ 50% 屏幕，全屏时 ≈ 90% 屏幕。
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = sheetState,
+            modifier = modifier,
+        ) {
+            // ── 区域 A：可滚动内容区 ──────────────────────────────────
+            // weight(1f, fill=false)：在父 ColumnScope（面板高度有界）中
+            //   占据除 Toolbar 之外的剩余空间，让 Toolbar 始终贴底。
+            // fill=false：内容不足时不强制撑满，面板自然收缩。
+            // verticalScroll：内容超出面板高度时可向上滚动。
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 顶部信息行：完成复选框 + 截止日期 + 优先级旗标
+                HeaderSection(
+                    task = task,
+                    onToggleDone = onToggleDone,
+                    onChangeDue = onChangeDue,
+                    onChangePriority = onChangePriority
                 )
 
-                // Layer 2: Dimming overlay (only visible in half-screen)
-                if (overlayAlpha > 0f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = overlayAlpha))
-                            .clickable(enabled = sheetState == SheetState.HALF_SCREEN) {
-                                sheetState = SheetState.HIDDEN
-                            }
-                    )
-                }
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Calculate final height: animated height + drag offset
-                val screenHeightPx = with(density) { screenHeight.toPx() }
-                val finalHeightFraction = if (isDragging) {
-                    // When dragging, apply offset to current animated position
-                    (animatedHeightFraction - dragOffsetY / screenHeightPx).coerceIn(0f, 1f)
-                } else {
-                    // When not dragging, just use animated height
-                    animatedHeightFraction
-                }
+                // 任务标题输入框（单行）
+                TitleSection(
+                    title = title,
+                    onTitleChange = onTitleChange
+                )
 
-                // Layer 3: Sheet surface (content + toolbar)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .fillMaxHeight(finalHeightFraction)
-                        .background(
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = if (finalHeightFraction >= 0.95f) {
-                                RoundedCornerShape(0.dp)
-                            } else {
-                                RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-                            }
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-                            shape = if (finalHeightFraction >= 0.95f) {
-                                RoundedCornerShape(0.dp)
-                            } else {
-                                RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-                            }
-                        )
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            // Consume click events to prevent propagation to background overlay
-                            // Do nothing - this prevents clicks inside the card from closing the sheet
-                        }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    // Child 3.1: Drag handle
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                            .height(32.dp)
-                            .pointerInput(Unit) {
-                                detectDragGestures(
-                                    onDragStart = {
-                                        isDragging = true
-                                        dragOffsetY = 0f
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        // Update drag offset in real-time
-                                        dragOffsetY += dragAmount.y
-                                    },
-                                    onDragEnd = {
-                                        isDragging = false
-                                        val dragThreshold = 150f
-
-                                        // Determine new state based on drag direction and amount
-                                        when (sheetState) {
-                                            SheetState.HALF_SCREEN -> {
-                                                sheetState = when {
-                                                    dragOffsetY > dragThreshold -> SheetState.HIDDEN
-                                                    dragOffsetY < -dragThreshold -> SheetState.FULL_SCREEN
-                                                    else -> SheetState.HALF_SCREEN
-                                                }
-                                            }
-                                            SheetState.FULL_SCREEN -> {
-                                                sheetState = if (dragOffsetY > dragThreshold) {
-                                                    SheetState.HALF_SCREEN
-                                                } else {
-                                                    SheetState.FULL_SCREEN
-                                                }
-                                            }
-                                            SheetState.HIDDEN -> { /* No action */ }
-                                        }
-
-                                        // Reset drag offset
-                                        dragOffsetY = 0f
-                                    },
-                                    onDragCancel = {
-                                        isDragging = false
-                                        dragOffsetY = 0f
-                                    }
-                                )
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .width(32.dp)
-                                .height(4.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                    shape = RoundedCornerShape(2.dp)
-                                )
-                                .clickable {
-                                    // Tap to toggle between half and full screen
-                                    sheetState = when (sheetState) {
-                                        SheetState.HALF_SCREEN -> SheetState.FULL_SCREEN
-                                        SheetState.FULL_SCREEN -> SheetState.HALF_SCREEN
-                                        SheetState.HIDDEN -> SheetState.HALF_SCREEN
-                                    }
-                                }
-                        )
-                    }
-
-                    // Child 3.2: Scrollable sheet content
-                    Column(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                    Spacer(modifier = Modifier.height(if (sheetState == SheetState.FULL_SCREEN) 16.dp else 8.dp))
-                    
-                    // Header section with checkbox, due date, and priority
-                    HeaderSection(
-                        task = task,
-                        onToggleDone = onToggleDone,
-                        onChangeDue = onChangeDue,
-                        onChangePriority = onChangePriority
-                    )
-                    
+                if (subtasks.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    
-                    // Title section
-                    TitleSection(
-                        title = title,
-                        onTitleChange = onTitleChange
-                    )
-                    
-                    // Subtasks section (between title and content)
-                    if (subtasks.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        SubtasksSection(
-                            subtasks = subtasks,
-                            onToggleSubtask = onToggleSubtask,
-                            onEditSubtaskTitle = onEditSubtaskTitle,
-                            onAddSubtask = onAddSubtask,
-                            onDeleteSubtask = onDeleteSubtask
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Content section (no longer individually scrollable)
-                    ContentSection(
-                        content = content,
-                        onContentChange = onContentChange
-                    )
-                    }
-                    
-                    // Child 3.3: Toolbar (stacked below content)
-                    TaskDetailToolbar(
-                        task = task,
-                        onToggleDone = onToggleDone,
-                        onChangeDue = onChangeDue,
-                        onChangePriority = onChangePriority,
+                    // 子任务列表（可逐行编辑）
+                    SubtasksSection(
+                        subtasks = subtasks,
+                        onToggleSubtask = onToggleSubtask,
+                        onEditSubtaskTitle = onEditSubtaskTitle,
                         onAddSubtask = onAddSubtask,
-                        onDivideSubtasks = onDivideSubtasks,
-                        onDeleteTask = onDeleteTask,
-                        isSubtaskDivisionLoading = isSubtaskDivisionLoading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            //.padding(top = 16.dp)
-                            //.imePadding()
-                            //.navigationBarsPadding()
-                            //.padding(bottom = 16.dp)
+                        onDeleteSubtask = onDeleteSubtask
                     )
                 }
-            }
-            }
-        }
 
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 任务详情/备注输入框（多行）
+                ContentSection(
+                    content = content,
+                    onContentChange = onContentChange
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // ── 区域 B：操作工具栏（固定在面板底部）────────────────────
+            // 位于可滚动区域之外，不会随内容滚动而消失。
+            TaskDetailToolbar(
+                task = task,
+                onToggleDone = onToggleDone,
+                onChangeDue = onChangeDue,
+                onChangePriority = onChangePriority,
+                onAddSubtask = onAddSubtask,
+                onDivideSubtasks = onDivideSubtasks,
+                onDeleteTask = onDeleteTask,
+                isSubtaskDivisionLoading = isSubtaskDivisionLoading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            )
+        }
     }
 }
 
@@ -450,14 +197,15 @@ private fun HeaderSection(
     modifier: Modifier = Modifier
 ) {
     var showPriorityMenu by remember { mutableStateOf(false) }
-    
+
+    // Row：水平排列三个子元素 —— [复选框] [截止日期(weight=1)] [优先级旗标]
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
     ) {
-        // Left: Checkbox to toggle task done
+        // 左：完成状态复选框，颜色跟随优先级
         val checkboxColors = CheckboxDefaults.colors(
             checkedColor = when (task.priority) {
                 Priority.HIGH -> Color(0xFFE53935)     // red
@@ -473,32 +221,32 @@ private fun HeaderSection(
             },
             checkmarkColor = Color.White
         )
-        
+
         Checkbox(
             checked = task.status == TaskStatus.DONE,
             onCheckedChange = { onToggleDone(task, it) },
             colors = checkboxColors
         )
-        
+
         Spacer(modifier = Modifier.width(12.dp))
-        
-        // Middle: Due date chip (weighted to take remaining space)
+
+        // 中：截止日期 chip，weight(1f) 让它撑满复选框与旗标之间的空间
         DueChip(
             dueAt = task.dueAt,
             onClick = { onChangeDue(task) },
             modifier = Modifier.weight(1f)
         )
-        
+
         Spacer(modifier = Modifier.width(12.dp))
-        
-        // Right: Priority flag with dropdown menu
+
+        // 右：优先级旗标 + 下拉菜单
+        // Box 作为锚点：DropdownMenu 会相对于这个 Box 定位弹出
         Box {
             PriorityFlag(
                 priority = task.priority,
                 onClick = { showPriorityMenu = true }
             )
-            
-            // Priority menu positioned relative to the flag
+
             if (showPriorityMenu) {
                 PriorityDropdown(
                     currentPriority = task.priority,
@@ -533,9 +281,9 @@ private fun DueChip(
             modifier = Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
+
         Spacer(modifier = Modifier.width(6.dp))
-        
+
         Text(
             text = if (dueAt != null) {
                 formatDueDate(dueAt)
@@ -562,7 +310,7 @@ private fun PriorityFlag(
         Priority.LOW -> Color(0xFF43A047)    // green
         Priority.DEFAULT -> MaterialTheme.colorScheme.onSurface
     }
-    
+
     IconButton(onClick = onClick, modifier = modifier) {
         Icon(
             imageVector = Icons.Default.Flag,
@@ -579,64 +327,65 @@ private fun PriorityDropdown(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Box 作为 DropdownMenu 的父容器；DropdownMenu 会弹出在 Box 范围内
     Box(modifier = modifier) {
         DropdownMenu(
             expanded = true,
             onDismissRequest = onDismiss
         ) {
             DropdownMenuItem(
-                text = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Flag,
                             contentDescription = null,
                             tint = Color(0xFFE53935)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("High") 
-                    } 
+                        Text("High")
+                    }
                 },
                 onClick = { onPrioritySelected(Priority.HIGH) }
             )
             DropdownMenuItem(
-                text = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Flag,
                             contentDescription = null,
                             tint = Color(0xFFFFA000)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Medium") 
-                    } 
+                        Text("Medium")
+                    }
                 },
                 onClick = { onPrioritySelected(Priority.MEDIUM) }
             )
             DropdownMenuItem(
-                text = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Flag,
                             contentDescription = null,
                             tint = Color(0xFF43A047)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Low") 
-                    } 
+                        Text("Low")
+                    }
                 },
                 onClick = { onPrioritySelected(Priority.LOW) }
             )
             DropdownMenuItem(
-                text = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Flag,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("None") 
-                    } 
+                        Text("None")
+                    }
                 },
                 onClick = { onPrioritySelected(Priority.DEFAULT) }
             )
@@ -657,7 +406,7 @@ private fun TitleSection(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
-    
+
     TextField(
         value = title,
         onValueChange = onTitleChange,
@@ -665,7 +414,7 @@ private fun TitleSection(
         textStyle = MaterialTheme.typography.titleLarge,
         singleLine = true,
         maxLines = 1,
-        colors = androidx.compose.material3.TextFieldDefaults.colors(
+        colors = TextFieldDefaults.colors(
             focusedContainerColor = Color.Transparent,
             unfocusedContainerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent,
@@ -697,7 +446,7 @@ private fun ContentSection(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
-    
+
     TextField(
             value = content,
             onValueChange = onContentChange,
@@ -705,7 +454,7 @@ private fun ContentSection(
             textStyle = MaterialTheme.typography.bodyLarge,
             minLines = 3,
             maxLines = 12,
-            colors = androidx.compose.material3.TextFieldDefaults.colors(
+            colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,
                 unfocusedContainerColor = Color.Transparent,
                 disabledContainerColor = Color.Transparent,
@@ -752,19 +501,20 @@ fun TaskDetailToolbar(
     modifier: Modifier = Modifier
 ) {
 
-    // Tool Bar floating under all UI
+    // Row：水平排列所有按钮
+    //   [AI拆分] [添加子任务] [提醒] ── Spacer(weight=1,撑开) ── [优先级文字] [删除]
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // AI Subtask Division Button
+        // Box：用来叠加内容（图标 或 加载圈），并设置背景色和圆角
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .background(
-                    color = if (isSubtaskDivisionLoading) 
+                    color = if (isSubtaskDivisionLoading)
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                    else 
+                    else
                         MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(8.dp)
                 )
@@ -789,7 +539,7 @@ fun TaskDetailToolbar(
                 )
             }
         }
-        
+
         Spacer(modifier = Modifier.width(12.dp))
 
         // Add subtask button
@@ -801,7 +551,7 @@ fun TaskDetailToolbar(
                     shape = RoundedCornerShape(8.dp)
                 )
                 .clickable {
-                    // Create a new subtask at the end of the list
+                // Create a new subtask at the end of the list
                     task.id?.let { parentId ->
                         onAddSubtask(parentId, "", null)
                     }
@@ -814,7 +564,7 @@ fun TaskDetailToolbar(
                 tint = MaterialTheme.colorScheme.onSecondary
             )
         }
-        
+
         Spacer(modifier = Modifier.width(12.dp))
 
         // Set Reminder Button
@@ -833,17 +583,17 @@ fun TaskDetailToolbar(
                 tint = MaterialTheme.colorScheme.onTertiary
             )
         }
-        
+
         Spacer(modifier = Modifier.weight(1f))
-        
+
         Text(
             text = "Priority: ${task.priority}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
+
         Spacer(modifier = Modifier.width(12.dp))
-        
+
         // Red Delete Button
         Box(
             modifier = Modifier
@@ -879,7 +629,7 @@ private fun SubtasksSection(
     val focusRequesters = remember(subtasks.size) {
         List(subtasks.size) { FocusRequester() }
     }
-    
+
     Column(modifier = modifier.fillMaxWidth()) {
         // Section header "Subtasks (2)"
         Text(
@@ -888,23 +638,23 @@ private fun SubtasksSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-        
+
         // Subtasks list
         subtasks.forEachIndexed { index, subtask ->
             var subtaskTitle by remember { mutableStateOf(subtask.title) }
-            
+
             // Update local state when subtask.title changes
             LaunchedEffect(subtask.title) {
                 subtaskTitle = subtask.title
             }
-            
+
             // Auto-focus on newly created subtask (empty title)
             LaunchedEffect(subtask.title, subtasks.size) {
                 if (subtask.title.isEmpty() && index < focusRequesters.size) {
                     focusRequesters[index].requestFocus()
                 }
             }
-            
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -926,32 +676,32 @@ private fun SubtasksSection(
                     },
                     checkmarkColor = Color.White
                 )
-                
+
                 Checkbox(
                     checked = subtask.status == TaskStatus.DONE,
-                    onCheckedChange = { checked -> 
+                    onCheckedChange = { checked ->
                         subtask.id?.let { onToggleSubtask(it.toString(), checked) }
                     },
                     colors = subtaskCheckboxColors
                 )
-                
+
                 Spacer(modifier = Modifier.width(8.dp))
-                
+
                 TextField(
                     value = subtaskTitle,
                     onValueChange = { newTitle ->
                         subtaskTitle = newTitle
-                        subtask.id?.let { 
+                        subtask.id?.let {
                             onEditSubtaskTitle(it.toString(), newTitle)
                         }
                     },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = if (subtask.status == TaskStatus.DONE) 
-                            MaterialTheme.colorScheme.onSurfaceVariant 
-                        else 
+                        color = if (subtask.status == TaskStatus.DONE)
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        else
                             MaterialTheme.colorScheme.onSurface,
-                        textDecoration = if (subtask.status == TaskStatus.DONE) 
-                            TextDecoration.LineThrough 
+                        textDecoration = if (subtask.status == TaskStatus.DONE)
+                            TextDecoration.LineThrough
                         else null
                     ),
                     colors = TextFieldDefaults.colors(
@@ -975,20 +725,20 @@ private fun SubtasksSection(
                         .focusRequester(if (index < focusRequesters.size) focusRequesters[index] else FocusRequester())
                         .onKeyEvent { keyEvent ->
                             // 监听删除键：当文本为空且按下删除键时，删除当前subtask
-                            if (keyEvent.key == Key.Backspace && 
-                                keyEvent.type == KeyEventType.KeyUp && 
+                            if (keyEvent.key == Key.Backspace &&
+                                keyEvent.type == KeyEventType.KeyUp &&
                                 subtaskTitle.isEmpty()) {
-                                
+
                                 // 将焦点转移到上一个subtask（如果存在）
                                 if (index > 0 && index - 1 < focusRequesters.size) {
                                     focusRequesters[index - 1].requestFocus()
                                 }
-                                
+
                                 // 删除当前subtask
                                 subtask.id?.let { subtaskId ->
                                     onDeleteSubtask(subtaskId)
                                 }
-                                
+
                                 true // 消费这个键盘事件
                             } else {
                                 false // 不消费，让系统处理
