@@ -34,6 +34,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
@@ -224,11 +227,13 @@ private fun HeaderSection(
             checkmarkColor = Color.White
         )
 
-        Checkbox(
-            checked = task.status == TaskStatus.DONE,
-            onCheckedChange = { onToggleDone(task, it) },
-            colors = checkboxColors
-        )
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides DpSize.Zero) {
+            Checkbox(
+                checked = task.status == TaskStatus.DONE,
+                onCheckedChange = { onToggleDone(task, it) },
+                colors = checkboxColors
+            )
+        }
 
         Spacer(modifier = Modifier.width(12.dp))
 
@@ -679,13 +684,15 @@ private fun SubtasksSection(
                     checkmarkColor = Color.White
                 )
 
-                Checkbox(
-                    checked = subtask.status == TaskStatus.DONE,
-                    onCheckedChange = { checked ->
-                        subtask.id?.let { onToggleSubtask(it.toString(), checked) }
-                    },
-                    colors = subtaskCheckboxColors
-                )
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides DpSize.Zero) {
+                    Checkbox(
+                        checked = subtask.status == TaskStatus.DONE,
+                        onCheckedChange = { checked ->
+                            subtask.id?.let { onToggleSubtask(it.toString(), checked) }
+                        },
+                        colors = subtaskCheckboxColors
+                    )
+                }
 
                 Spacer(modifier = Modifier.width(8.dp))
 
