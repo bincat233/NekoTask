@@ -157,10 +157,28 @@ fun TaskDetailSheet(
     // Sheet state management
     var sheetState by remember { mutableStateOf(SheetState.HIDDEN) }
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
-    
+
+    // Drag offset in pixels
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    // Calculate animated height based on state
+    val targetHeightFraction = when (sheetState) {
+        SheetState.FULL_SCREEN -> 1f
+        SheetState.HALF_SCREEN -> 0.6f
+        SheetState.HIDDEN -> 0f
+    }
+
+    val animatedHeightFraction by animateFloatAsState(
+        targetValue = targetHeightFraction,
+        animationSpec = tween(durationMillis = 300),
+        label = "sheetHeight"
+    )
+
     // Initialize sheet state when visible changes
     LaunchedEffect(visible) {
         sheetState = if (visible) SheetState.HALF_SCREEN else SheetState.HIDDEN
+        dragOffsetY = 0f
     }
     
     // Auto-expand to fullscreen when IME appears (with 300ms delay)
@@ -218,31 +236,43 @@ fun TaskDetailSheet(
             
             // Full screen container with custom background overlay
             Box(modifier = Modifier.fillMaxSize()) {
-                // Background overlay (only show in half screen mode)
-                if (sheetState == SheetState.HALF_SCREEN) {
+                // Background overlay with animated alpha
+                val overlayAlpha by animateFloatAsState(
+                    targetValue = if (sheetState == SheetState.HALF_SCREEN) 0.5f else 0f,
+                    animationSpec = tween(durationMillis = 300),
+                    label = "overlayAlpha"
+                )
+
+                if (overlayAlpha > 0f) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .clickable { sheetState = SheetState.HIDDEN }
+                            .background(Color.Black.copy(alpha = overlayAlpha))
+                            .clickable(enabled = sheetState == SheetState.HALF_SCREEN) {
+                                sheetState = SheetState.HIDDEN
+                            }
                     )
                 }
-                
+
+                // Calculate final height: animated height + drag offset
+                val screenHeightPx = with(density) { screenHeight.toPx() }
+                val finalHeightFraction = if (isDragging) {
+                    // When dragging, apply offset to current animated position
+                    (animatedHeightFraction - dragOffsetY / screenHeightPx).coerceIn(0f, 1f)
+                } else {
+                    // When not dragging, just use animated height
+                    animatedHeightFraction
+                }
+
                 // Main content container with layered toolbar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .then(
-                            when (sheetState) {
-                                SheetState.FULL_SCREEN -> Modifier.fillMaxSize()
-                                SheetState.HALF_SCREEN -> Modifier.fillMaxHeight(0.6f)
-                                SheetState.HIDDEN -> Modifier.fillMaxHeight(0f)
-                            }
-                        )
+                        .fillMaxHeight(finalHeightFraction)
                         .background(
                             color = MaterialTheme.colorScheme.surface,
-                            shape = if (sheetState == SheetState.FULL_SCREEN) {
+                            shape = if (finalHeightFraction >= 0.95f) {
                                 RoundedCornerShape(0.dp)
                             } else {
                                 RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
@@ -251,7 +281,7 @@ fun TaskDetailSheet(
                         .border(
                             width = 1.dp,
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-                            shape = if (sheetState == SheetState.FULL_SCREEN) {
+                            shape = if (finalHeightFraction >= 0.95f) {
                                 RoundedCornerShape(0.dp)
                             } else {
                                 RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
@@ -273,46 +303,54 @@ fun TaskDetailSheet(
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 80.dp) // Bottom padding for toolbar height + 16dp
                 ) {
-                    // Drag handle (always show, but different behavior based on state)
-                    var totalDragAmount by remember { mutableStateOf(0f) }
-                    
+                    // Drag handle with smooth real-time dragging
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 16.dp)
                             .height(32.dp)
-                            .pointerInput(sheetState) {
+                            .pointerInput(Unit) {
                                 detectDragGestures(
                                     onDragStart = {
-                                        totalDragAmount = 0f
+                                        isDragging = true
+                                        dragOffsetY = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        // Update drag offset in real-time
+                                        dragOffsetY += dragAmount.y
                                     },
                                     onDragEnd = {
+                                        isDragging = false
                                         val dragThreshold = 150f
-                                        
+
+                                        // Determine new state based on drag direction and amount
                                         when (sheetState) {
                                             SheetState.HALF_SCREEN -> {
-                                                if (totalDragAmount > dragThreshold) {
-                                                    // Drag down to dismiss
-                                                    sheetState = SheetState.HIDDEN
-                                                } else if (totalDragAmount < -dragThreshold) {
-                                                    // Drag up to fullscreen
-                                                    sheetState = SheetState.FULL_SCREEN
+                                                sheetState = when {
+                                                    dragOffsetY > dragThreshold -> SheetState.HIDDEN
+                                                    dragOffsetY < -dragThreshold -> SheetState.FULL_SCREEN
+                                                    else -> SheetState.HALF_SCREEN
                                                 }
                                             }
                                             SheetState.FULL_SCREEN -> {
-                                                if (totalDragAmount > dragThreshold) {
-                                                    // Drag down to half screen
-                                                    sheetState = SheetState.HALF_SCREEN
+                                                sheetState = if (dragOffsetY > dragThreshold) {
+                                                    SheetState.HALF_SCREEN
+                                                } else {
+                                                    SheetState.FULL_SCREEN
                                                 }
                                             }
                                             SheetState.HIDDEN -> { /* No action */ }
                                         }
-                                        totalDragAmount = 0f
+
+                                        // Reset drag offset
+                                        dragOffsetY = 0f
+                                    },
+                                    onDragCancel = {
+                                        isDragging = false
+                                        dragOffsetY = 0f
                                     }
-                                ) { change, dragAmount ->
-                                    // Accumulate drag amount
-                                    totalDragAmount += dragAmount.y
-                                }
+                                )
                             },
                         contentAlignment = Alignment.Center
                     ) {
