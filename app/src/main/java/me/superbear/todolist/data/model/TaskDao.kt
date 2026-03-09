@@ -165,6 +165,40 @@ interface TaskDao {
     suspend fun deleteById(id: Long): Int
 
     /**
+     * Recursively deletes a task and all its subtasks.
+     * This method first deletes all children recursively, then deletes the parent task.
+     * 
+     * @param id Task ID to delete recursively
+     * @return Number of rows deleted (including all subtasks)
+     */
+    @Transaction
+    suspend fun deleteTaskRecursively(id: Long): Int {
+        var totalDeleted = 0
+        
+        // First, get all direct children of this task
+        val children = getDirectChildren(id)
+        
+        // Recursively delete each child and its subtasks
+        for (child in children) {
+            totalDeleted += deleteTaskRecursively(child.id)
+        }
+        
+        // Finally, delete the parent task itself
+        totalDeleted += deleteById(id)
+        
+        return totalDeleted
+    }
+
+    /**
+     * Gets all direct children of a task by parent ID.
+     * 
+     * @param parentId Parent task ID
+     * @return List of direct child tasks
+     */
+    @Query("SELECT * FROM tasks WHERE parent_id = :parentId ORDER BY order_in_parent ASC, created_at ASC")
+    suspend fun getDirectChildren(parentId: Long): List<TaskEntity>
+
+    /**
      * Deletes a task entity.
      * 
      * @param task TaskEntity to delete

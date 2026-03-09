@@ -77,7 +77,7 @@ class TodoRepository(private val context: Context) {
 
     init {
         // IMPORTANT: Delete database BEFORE lazy initialization if flag is set
-        if (BuildConfig.FORCE_DELETE_DB) {
+        if (BuildConfig.DEBUG && false) { // Temporarily disabled
             Log.w("TodoRepository", "FORCE_DELETE_DB is true, deleting database.")
             context.deleteDatabase("todolist_database")
             // Also reset the seeding flag so database will be re-seeded
@@ -186,6 +186,39 @@ class TodoRepository(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Log.e("TodoRepository", "Failed to delete task: $id", e)
+            }
+        }
+    }
+
+    /**
+     * Recursively delete a task and all its subtasks.
+     * This method ensures that all child tasks are deleted before the parent task.
+     * 
+     * @param id Task ID to delete recursively
+     */
+    fun deleteTaskRecursively(id: Long) {
+        repositoryScope.launch {
+            try {
+                // Fetch parent info first for reindex
+                val task = database.taskDao().getTaskById(id)
+                val parentId = task?.parentId
+
+                // Use the DAO's recursive deletion method
+                val totalDeleted = database.taskDao().deleteTaskRecursively(id)
+                
+                if (totalDeleted > 0) {
+                    // Reindex remaining siblings to keep 0..n-1
+                    try {
+                        database.taskOrderOpsDao().reindexParent(parentId)
+                    } catch (e: Exception) {
+                        Log.e("TodoRepository", "Failed to reindex after recursive delete for parent=$parentId", e)
+                    }
+                    Log.d("TodoRepository", "Recursively deleted $totalDeleted tasks starting from: $id and reindexed siblings of parent=$parentId")
+                } else {
+                    Log.w("TodoRepository", "Task not found for recursive deletion: $id")
+                }
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to recursively delete task: $id", e)
             }
         }
     }
@@ -399,6 +432,56 @@ class TodoRepository(private val context: Context) {
                 Log.d("TodoRepository", "Added new task: $title (rowId: $rowId)")
             } catch (e: Exception) {
                 Log.e("TodoRepository", "Failed to add task: $title", e)
+            }
+        }
+    }
+
+    /**
+     * Insert a task at a specific position within its parent.
+     * Shifts existing tasks at the position and below down by one.
+     * 
+     * @param title The title of the new task
+     * @param parentId Parent ID for creating subtasks
+     * @param order The position to insert at (0-based)
+     * @param content Optional content for the new task
+     * @param priority Priority of the new task
+     * @param dueAt Optional due date
+     * @param status Status of the new task
+     */
+    fun insertTaskAt(
+        title: String,
+        parentId: Long? = null,
+        order: Long,
+        content: String? = null,
+        priority: Priority = Priority.DEFAULT,
+        dueAt: Instant? = null,
+        status: TaskStatus = TaskStatus.OPEN
+    ) {
+        repositoryScope.launch {
+            try {
+                val now = Clock.System.now()
+                
+                // First, shift existing tasks at the position and below down by one
+                database.taskDao().bulkShiftOrders(parentId, order, 1L)
+                
+                val newTask = Task(
+                    id = null,
+                    title = title,
+                    content = content,
+                    status = status,
+                    priority = priority,
+                    parentId = parentId,
+                    dueAt = dueAt,
+                    createdAt = now,
+                    updatedAt = now,
+                    orderInParent = order
+                )
+                
+                // Insert the new task at the specified position
+                val rowId = database.taskDao().insert(newTask.toEntity())
+                Log.d("TodoRepository", "Inserted task at position $order: $title (rowId: $rowId)")
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to insert task at position $order: $title", e)
             }
         }
     }

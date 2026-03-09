@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "945000333883",
+    "project_id": "todolist-6fcaa380",
+    "storage_bucket": "todolist-6fcaa380.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:945000333883:android:a15c51efaad97a4d98521e",
+        "android_client_info": {
+          "package_name": "me.superbear.todolist"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdOVv4mI33dPjvXDectWy_n_B19ttF9pk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

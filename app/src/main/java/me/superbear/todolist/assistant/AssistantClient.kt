@@ -19,27 +19,56 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.delay
 import kotlinx.serialization.MissingFieldException
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlin.random.Random
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.domain.entities.ChatMessage
 import java.net.UnknownHostException
 
 interface AssistantClient {
-    suspend fun send(message: String, history: List<ChatMessage>): Result<String>
+    suspend fun sendChat(message: String, history: List<ChatMessage>, memoryContext: String = ""): Result<AssistantEnvelope>
 }
 
-class MockAssistantClient : AssistantClient {
-    private val responses = listOf(
-        "{\"say\":\"I can help. What's the task?\",\"actions\":[]}",
-        "{\"say\":\"Added to your list.\",\"actions\":[{\"type\":\"add_task\",\"title\":\"Buy milk\",\"notes\":\"2%\"}]}"
+interface TextAssistantClient {
+    suspend fun sendText(prompt: String): Result<String>
+}
+
+class MockAssistantClient : AssistantClient, TextAssistantClient {
+    private val chatResponses = listOf(
+        AssistantEnvelope(say = "I can help. What's the task?", actions = emptyList()),
+        AssistantEnvelope(
+            say = "Added to your list.",
+            actions = listOf(AssistantAction.AddTask(title = "Buy milk", content = "2%"))
+        )
     )
 
-    override suspend fun send(message: String, history: List<ChatMessage>): Result<String> {
-        delay(1000)
-        return Result.success(responses[Random.nextInt(responses.size)])
+    private val subtaskResponse = """
+        {
+          "reasoning": "Break into simple, sequential steps.",
+          "subtasks": [
+            {"title":"Gather requirements","content":"Clarify scope and constraints","priority":"MEDIUM","estimatedOrder":1,"dependencies":[]},
+            {"title":"Draft plan","content":"Outline key steps and timeline","priority":"MEDIUM","estimatedOrder":2,"dependencies":[0]},
+            {"title":"Execute tasks","content":"Complete the planned work","priority":"HIGH","estimatedOrder":3,"dependencies":[1]}
+          ]
+        }
+    """.trimIndent()
+
+    override suspend fun sendChat(message: String, history: List<ChatMessage>, memoryContext: String): Result<AssistantEnvelope> {
+        delay(600)
+        return Result.success(chatResponses[Random.nextInt(chatResponses.size)])
+    }
+
+    override suspend fun sendText(prompt: String): Result<String> {
+        delay(600)
+        return Result.success(subtaskResponse)
     }
 }
 
@@ -74,11 +103,14 @@ private fun prettyEmbeddedJson(text: String): String {
     }.getOrElse { text }
 }
 
-class RealAssistantClient : AssistantClient {
+class RealAssistantClient : AssistantClient, TextAssistantClient {
 
     private val json = Json {
         ignoreUnknownKeys = true
-        prettyPrint = false  // 传输时使用紧凑格式
+        prettyPrint = false  // Use compact format for transmission
+        explicitNulls = false
+        encodeDefaults = true  // Ensure default values like type="function" are serialized
+        isLenient = true
     }
 
     private val client = HttpClient(CIO) {
@@ -105,7 +137,7 @@ class RealAssistantClient : AssistantClient {
     private fun logRequest(request: OpenAIRequest, messages: List<OpenAIChatMessage>) {
         Log.d("RealAssistantClient", "Request (pretty): ${prettyWholeJson(json.encodeToString(request))}")
         val prettyContents = messages.joinToString(separator = "\n") { m ->
-            "- ${m.role}:\n" + prettyEmbeddedJson(m.content)
+            "- ${m.role}:\n" + prettyEmbeddedJson(m.content ?: "")
         }
         Log.d("RealAssistantClient", "Request message contents (pretty):\n$prettyContents")
     }
@@ -117,12 +149,29 @@ class RealAssistantClient : AssistantClient {
         }
     }
 
-    private fun parseResponse(response: String): Result<String> {
+    private fun parseChatResponse(response: String): Result<AssistantEnvelope> {
+        return try {
+            val openAIResponse = json.decodeFromString<OpenAIResponse>(response)
+            val message = openAIResponse.choices.firstOrNull()?.message
+            val assistantContent = message?.content
+            logResponse(response, assistantContent)
+            val actions = message?.toolCalls?.mapNotNull(::mapToolCall).orEmpty()
+            Result.success(AssistantEnvelope(say = assistantContent, actions = actions))
+        } catch (e: MissingFieldException) {
+            handleParsingError(response, e).map { AssistantEnvelope(say = it, actions = emptyList()) }
+        }
+    }
+
+    private fun parseTextResponse(response: String): Result<String> {
         return try {
             val openAIResponse = json.decodeFromString<OpenAIResponse>(response)
             val assistantContent = openAIResponse.choices.firstOrNull()?.message?.content
             logResponse(response, assistantContent)
-            Result.success(openAIResponse.choices.first().message.content)
+            if (assistantContent == null) {
+                Result.failure(Exception("Empty response content from model."))
+            } else {
+                Result.success(assistantContent)
+            }
         } catch (e: MissingFieldException) {
             handleParsingError(response, e)
         }
@@ -137,80 +186,62 @@ class RealAssistantClient : AssistantClient {
         }
     }
 
-    override suspend fun send(message: String, history: List<ChatMessage>): Result<String> {
+    override suspend fun sendChat(message: String, history: List<ChatMessage>, memoryContext: String): Result<AssistantEnvelope> {
         if (apiKey.isBlank() || apiKey.equals("null", ignoreCase = true)) {
             return Result.failure(Exception("OpenAI API key is missing. Please add it to your local.properties file."))
         }
 
         val systemInstruction = OpenAIChatMessage(
             role = "system",
-            content = """You are a helpful assistant for a to-do list app. Reply with ONE compact JSON object ONLY (no code fences, no extra prose) using this schema:
-
-{
-  "say": "string",
-  "actions": [
-    { "type": "add_task", "title": "string", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123? },
-    { "type": "complete_task", "id": 123 },
-    { "type": "delete_task", "id": 123 },
-    { "type": "update_task", "id": 123, "title": "string?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 456? }
-  ]
-}
-
-Rules:
-- You will also receive CURRENT_TODO_STATE as a system message. It is NESTED by hierarchy:
-  {
-    "now": "...",
-    "unfinished": [ { "id": 1, "title": "...", "status": "OPEN", "priority": "...", "children": [ ... ], "totalChildren": 2, "doneChildren": 1, "progress": 0.5 }, ... ],
-    "finished":   [ { "id": 2, "title": "...", "status": "DONE", "children": [ ... ] }, ... ],
-    "finished_count": 42
-  }
-- Use ids from CURRENT_TODO_STATE when referencing existing items at ANY depth (top-level or nested children).
-- complete_task: ONLY for items that are currently in the "unfinished" tree (any depth).
-- delete_task: allowed for ANY item in either tree.
-- add_task: for new items. Provide parentId to create a subtask under that parent; omit parentId to create a top-level task.
-- update_task: use parentId to reparent under another existing task if needed.
-- If the user asks to delete all/everything, return delete_task for all ids across BOTH trees.
-- If ambiguous, ask a clarifying question in "say" and return "actions": [].
-- Output EXACTLY one JSON object with keys "say" and "actions". No markdown/backticks/extra keys."""
+            content = """You are a helpful assistant for a to-do list app.
+Use tools to create, update, delete, or complete tasks. When you use tools, keep a short user-facing reply in content.
+If the request is ambiguous, ask a clarifying question and do not call tools.
+You will receive CURRENT_TODO_STATE as a system message. Use ids from that state when referencing existing tasks."""
         )
+
+        val memoryMessage = memoryContext.takeIf { it.isNotBlank() }?.let {
+            OpenAIChatMessage(role = "system", content = it)
+        }
 
         val stateMessage = stateProvider?.invoke()?.let { snapshot ->
             OpenAIChatMessage(role = "system", content = "CURRENT_TODO_STATE: $snapshot")
         }
 
-        // Always include system + CURRENT_TODO_STATE; trim only the chat history to fit the limit
         val historyMessages = history.map {
             OpenAIChatMessage(
                 role = it.sender.name.lowercase(),
                 content = it.text
             )
         }
-        // Reserve 2 slots for system + state (state may be null; safe to over-reserve)
+
         val maxTotal = 10
-        val reserved = 2
+        val reserved = 3
         val limitedHistory = historyMessages.takeLast(maxTotal - reserved)
 
         val messages = mutableListOf<OpenAIChatMessage>().apply {
             add(systemInstruction)
+            memoryMessage?.let { add(it) }
             stateMessage?.let { add(it) }
             addAll(limitedHistory)
         }
 
         val request = OpenAIRequest(
             model = "gpt-5-mini",
-            messages = messages
+            messages = messages,
+            tools = tools,
+            toolChoice = JsonPrimitive("auto")
         )
-        
+
         return try {
             logRequest(request, messages)
-            
+
             val response = client.post("${baseUrl.trimEnd('/')}/v1/chat/completions") {
                 header("Authorization", "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(request)
             }.body<String>()
-            
-            parseResponse(response)
+
+            parseChatResponse(response)
         } catch (e: HttpRequestTimeoutException) {
             Result.failure(Exception("Request timed out. Please check your internet connection and try again."))
         } catch (e: UnknownHostException) {
@@ -219,12 +250,261 @@ Rules:
             Result.failure(Exception("An unexpected error occurred: ${e.message}"))
         }
     }
+
+    override suspend fun sendText(prompt: String): Result<String> {
+        if (apiKey.isBlank() || apiKey.equals("null", ignoreCase = true)) {
+            return Result.failure(Exception("OpenAI API key is missing. Please add it to your local.properties file."))
+        }
+
+        val messages = listOf(
+            OpenAIChatMessage(role = "user", content = prompt)
+        )
+
+        val request = OpenAIRequest(
+            model = "gpt-5-mini",
+            messages = messages
+        )
+
+        return try {
+            logRequest(request, messages)
+
+            val response = client.post("${baseUrl.trimEnd('/')}/v1/chat/completions") {
+                header("Authorization", "Bearer $apiKey")
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }.body<String>()
+
+            parseTextResponse(response)
+        } catch (e: HttpRequestTimeoutException) {
+            Result.failure(Exception("Request timed out. Please check your internet connection and try again."))
+        } catch (e: UnknownHostException) {
+            Result.failure(Exception("Unable to resolve host. Check your DNS/proxy or network connectivity."))
+        } catch (e: Exception) {
+            Result.failure(Exception("An unexpected error occurred: ${e.message}"))
+        }
+    }
+
+    private fun mapToolCall(call: OpenAIToolCall): AssistantAction? {
+        return when (call.function.name) {
+            "add_task" -> decodeArgs<AddTaskArgs>(call.function.arguments)?.let { args ->
+                val title = args.title?.trim().orEmpty()
+                if (title.isBlank()) {
+                    Log.e("RealAssistantClient", "add_task missing title: ${call.function.arguments}")
+                    null
+                } else {
+                    AssistantAction.AddTask(
+                        title = title,
+                        content = args.content?.trim()?.takeIf { it.isNotEmpty() },
+                        dueAtIso = args.dueAt?.trim()?.takeIf { it.isNotEmpty() },
+                        priority = args.priority?.trim()?.takeIf { it.isNotEmpty() },
+                        parentId = args.parentId,
+                        orderInParent = args.orderInParent
+                    )
+                }
+            }
+            "update_task" -> decodeArgs<UpdateTaskArgs>(call.function.arguments)?.let { args ->
+                val id = args.id
+                if (id == null) {
+                    Log.e("RealAssistantClient", "update_task missing id: ${call.function.arguments}")
+                    null
+                } else {
+                    AssistantAction.UpdateTask(
+                        id = id,
+                        title = args.title?.trim()?.takeIf { it.isNotEmpty() },
+                        content = args.content?.trim()?.takeIf { it.isNotEmpty() },
+                        dueAtIso = args.dueAt?.trim()?.takeIf { it.isNotEmpty() },
+                        priority = args.priority?.trim()?.takeIf { it.isNotEmpty() },
+                        parentId = args.parentId,
+                        orderInParent = args.orderInParent
+                    )
+                }
+            }
+            "delete_task" -> decodeArgs<IdArgs>(call.function.arguments)?.let { args ->
+                args.id?.let { AssistantAction.DeleteTask(id = it) }
+            }
+            "complete_task" -> decodeArgs<IdArgs>(call.function.arguments)?.let { args ->
+                args.id?.let { AssistantAction.CompleteTask(id = it) }
+            }
+            else -> {
+                Log.e("RealAssistantClient", "Unknown tool call: ${call.function.name}")
+                null
+            }
+        }
+    }
+
+    private inline fun <reified T> decodeArgs(arguments: String): T? {
+        return runCatching { json.decodeFromString<T>(arguments) }
+            .onFailure { Log.e("RealAssistantClient", "Failed to parse tool arguments: $arguments", it) }
+            .getOrNull()
+    }
+
+    private val tools: List<OpenAITool> by lazy {
+        listOf(
+            OpenAITool(
+                function = OpenAIFunctionDef(
+                    name = "add_task",
+                    description = "Add a new task or subtask.",
+                    parameters = buildJsonObject {
+                        put("type", JsonPrimitive("object"))
+                        put("properties", buildJsonObject {
+                            put("title", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("Task title"))
+                            })
+                            put("content", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("Task notes"))
+                            })
+                            put("dueAt", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("ISO-8601 due date"))
+                            })
+                            put("priority", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("LOW, MEDIUM, HIGH, or DEFAULT"))
+                            })
+                            put("parentId", buildJsonObject {
+                                put("type", JsonPrimitive("integer"))
+                                put("description", JsonPrimitive("Parent task id for a subtask"))
+                            })
+                            put("orderInParent", buildJsonObject {
+                                put("type", JsonPrimitive("integer"))
+                                put("description", JsonPrimitive("Optional order in parent list"))
+                            })
+                        })
+                        put("required", buildJsonArray {
+                            add(JsonPrimitive("title"))
+                        })
+                    }
+                )
+            ),
+            OpenAITool(
+                function = OpenAIFunctionDef(
+                    name = "update_task",
+                    description = "Update fields of an existing task.",
+                    parameters = buildJsonObject {
+                        put("type", JsonPrimitive("object"))
+                        put("properties", buildJsonObject {
+                            put("id", buildJsonObject {
+                                put("type", JsonPrimitive("integer"))
+                                put("description", JsonPrimitive("Task id"))
+                            })
+                            put("title", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("New title"))
+                            })
+                            put("content", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("New notes"))
+                            })
+                            put("dueAt", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("ISO-8601 due date"))
+                            })
+                            put("priority", buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put("description", JsonPrimitive("LOW, MEDIUM, HIGH, or DEFAULT"))
+                            })
+                            put("parentId", buildJsonObject {
+                                put("type", JsonPrimitive("integer"))
+                                put("description", JsonPrimitive("New parent id for reparenting"))
+                            })
+                            put("orderInParent", buildJsonObject {
+                                put("type", JsonPrimitive("integer"))
+                                put("description", JsonPrimitive("Optional order in parent list"))
+                            })
+                        })
+                        put("required", buildJsonArray {
+                            add(JsonPrimitive("id"))
+                        })
+                    }
+                )
+            ),
+            OpenAITool(
+                function = OpenAIFunctionDef(
+                    name = "delete_task",
+                    description = "Delete a task by id.",
+                    parameters = buildJsonObject {
+                        put("type", JsonPrimitive("object"))
+                        put("properties", buildJsonObject {
+                            put("id", buildJsonObject {
+                                put("type", JsonPrimitive("integer"))
+                                put("description", JsonPrimitive("Task id"))
+                            })
+                        })
+                        put("required", buildJsonArray {
+                            add(JsonPrimitive("id"))
+                        })
+                    }
+                )
+            ),
+            OpenAITool(
+                function = OpenAIFunctionDef(
+                    name = "complete_task",
+                    description = "Mark a task as completed by id.",
+                    parameters = buildJsonObject {
+                        put("type", JsonPrimitive("object"))
+                        put("properties", buildJsonObject {
+                            put("id", buildJsonObject {
+                                put("type", JsonPrimitive("integer"))
+                                put("description", JsonPrimitive("Task id"))
+                            })
+                        })
+                        put("required", buildJsonArray {
+                            add(JsonPrimitive("id"))
+                        })
+                    }
+                )
+            )
+        )
+    }
 }
+
+@Serializable
+private data class AddTaskArgs(
+    val title: String? = null,
+    val content: String? = null,
+    @SerialName("dueAt") val dueAt: String? = null,
+    val priority: String? = null,
+    val parentId: Long? = null,
+    val orderInParent: Long? = null
+)
+
+@Serializable
+private data class UpdateTaskArgs(
+    val id: Long? = null,
+    val title: String? = null,
+    val content: String? = null,
+    @SerialName("dueAt") val dueAt: String? = null,
+    val priority: String? = null,
+    val parentId: Long? = null,
+    val orderInParent: Long? = null
+)
+
+@Serializable
+private data class IdArgs(
+    val id: Long? = null
+)
 
 @Serializable
 data class OpenAIRequest(
     val model: String,
-    val messages: List<OpenAIChatMessage>
+    val messages: List<OpenAIChatMessage>,
+    val tools: List<OpenAITool>? = null,
+    @SerialName("tool_choice") val toolChoice: JsonElement? = null
+)
+
+@Serializable
+data class OpenAITool(
+    val type: String = "function",
+    val function: OpenAIFunctionDef
+)
+
+@Serializable
+data class OpenAIFunctionDef(
+    val name: String,
+    val description: String,
+    val parameters: JsonObject
 )
 
 @Serializable
@@ -240,7 +520,21 @@ data class OpenAIChoice(
 @Serializable
 data class OpenAIChatMessage(
     val role: String,
-    val content: String
+    val content: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<OpenAIToolCall>? = null
+)
+
+@Serializable
+data class OpenAIToolCall(
+    val id: String? = null,
+    val type: String,
+    val function: OpenAIFunctionCall
+)
+
+@Serializable
+data class OpenAIFunctionCall(
+    val name: String,
+    val arguments: String
 )
 
 @Serializable

@@ -3,7 +3,6 @@ package me.superbear.todolist.ui.main.sections.chatOverlay
 import android.util.Log
 import kotlinx.datetime.Instant
 import me.superbear.todolist.assistant.AssistantAction
-import me.superbear.todolist.assistant.AssistantActionParser
 import me.superbear.todolist.assistant.AssistantClient
 import me.superbear.todolist.assistant.AssistantEnvelope
 import me.superbear.todolist.assistant.RealAssistantClient
@@ -18,8 +17,7 @@ import me.superbear.todolist.domain.entities.TaskStatus
  */
 class AssistantController(
     private val mockAssistantClient: AssistantClient,
-    private val realAssistantClient: AssistantClient,
-    private val assistantActionParser: AssistantActionParser
+    private val realAssistantClient: AssistantClient
 ) {
     
     /**
@@ -35,23 +33,13 @@ class AssistantController(
     suspend fun send(
         text: String, 
         currentMessages: List<ChatMessage>, 
-        useMock: Boolean
+        useMock: Boolean,
+        memoryContext: String = ""
     ): Result<AssistantEnvelope> {
         val client = if (useMock) mockAssistantClient else realAssistantClient
         
         return try {
-            val response = client.send(text, currentMessages)
-            response.fold(
-                onSuccess = { responseText ->
-                    val envelope = assistantActionParser.parseEnvelope(responseText).getOrElse {
-                        AssistantEnvelope("(no text)", emptyList())
-                    }
-                    Result.success(envelope)
-                },
-                onFailure = { error ->
-                    Result.failure(error)
-                }
-            )
+            client.sendChat(text, currentMessages, memoryContext)
         } catch (e: Exception) {
             Result.failure(e)
         }

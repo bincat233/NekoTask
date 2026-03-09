@@ -15,15 +15,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Task
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NoteAlt
+import androidx.compose.material3.*
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -45,6 +46,16 @@ import me.superbear.todolist.ui.main.sections.tasks.TaskSection
 import me.superbear.todolist.ui.main.sections.tasks.TaskEvent as TaskSectionEvent
 import me.superbear.todolist.ui.main.state.AppEvent
 import me.superbear.todolist.ui.main.state.TaskDetailEvent
+import me.superbear.todolist.ui.main.state.SubtaskDivisionEvent
+import me.superbear.todolist.ui.main.state.LongTermMemoryEvent
+import me.superbear.todolist.ui.settings.SettingsScreen
+import me.superbear.todolist.ui.settings.SettingsState
+
+// Page navigation states
+sealed class AppPage {
+    object TaskList : AppPage()    // Main task list page
+    object Settings : AppPage()    // Settings page
+}
 
 // Main app modes - replaces scattered boolean states
 sealed class AppMode {
@@ -70,6 +81,7 @@ private fun getCurrentAppMode(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: MainViewModel = viewModel()
@@ -79,10 +91,23 @@ fun MainScreen(
     val onEvent = viewModel::onEvent
     val localDensity = LocalDensity.current
     
+    // 抽屉导航状态
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    
+    // 页面导航状态
+    var currentPage by remember { mutableStateOf<AppPage>(AppPage.TaskList) }
+    
+    // 设置状态
+    var settingsState by remember { mutableStateOf(SettingsState()) }
+    
     // 计算当前模式（简化多处布尔状态判断）
     val currentMode = getCurrentAppMode(state.manualAddState.isOpen, state.chatOverlayState.chatOverlayMode)
 
     // 物理返回键处理：在不同模式下拦截并派发相应事件
+    BackHandler(enabled = currentPage == AppPage.Settings) {
+        currentPage = AppPage.TaskList
+    }
     BackHandler(enabled = currentMode == AppMode.ManualAdd) { 
         onEvent(AppEvent.ManualAdd(me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Close))
     }
@@ -101,7 +126,123 @@ fun MainScreen(
             label = "blurAnimation"
         )
 
-        Scaffold(
+        // 抽屉导航包装整个内容
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet {
+                    // 抽屉头部
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = "NekoTask",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    
+                    HorizontalDivider()
+                    
+                    // 抽屉菜单项
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Task, contentDescription = null) },
+                        label = { Text("Tasks") },
+                        selected = currentPage == AppPage.TaskList,
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                            }
+                            currentPage = AppPage.TaskList
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.NoteAlt, contentDescription = null) },
+                        label = { Text("Notes") },
+                        selected = false,
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                            }
+                            // TODO: Notes
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                        label = { Text("Settings") },
+                        selected = currentPage == AppPage.Settings,
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                            }
+                            currentPage = AppPage.Settings
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        label = { Text("About") },
+                        selected = false,
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                            }
+                            // TODO: 显示关于信息
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
+            }
+        ) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { 
+                            Text("NekoTask") 
+                        },
+                        navigationIcon = {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        if (drawerState.isClosed) {
+                                            drawerState.open()
+                                        } else {
+                                            drawerState.close()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "打开菜单"
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = {
+                                    // TODO: 显示更多选项菜单
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "更多选项"
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                },
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 // 底部聊天输入：仅在非“手动添加”模式展示
@@ -132,9 +273,9 @@ fun MainScreen(
                 }
             },
             floatingActionButton = {
-                // Show FAB only in normal mode when keyboard is not visible
-                // 添加任务的 FAB：仅在常规模式且键盘未弹出时显示
-                if (currentMode == AppMode.Normal && !state.chatOverlayState.imeVisible) {
+                // Show FAB only in task list page, normal mode when keyboard is not visible
+                // 添加任务的 FAB：仅在任务列表页面、常规模式且键盘未弹出时显示
+                if (currentPage == AppPage.TaskList && currentMode == AppMode.Normal && !state.chatOverlayState.imeVisible) {
                     ManualAddFab(
                         onClick = { 
                             // 打开手动添加面板
@@ -156,37 +297,75 @@ fun MainScreen(
             },
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
-            // 主内容区域（可被模糊的区域）：任务列表
-            Box(
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .fillMaxSize()
-                    .blur(radius = blurRadius)
-            ) {
-                TaskSection(
-                    state = state.taskState,
-                    onToggleTask = { task ->
-                        // 切换任务完成状态
-                        onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
-                    },
-                    onAddSubtask = { parentId, title ->
-                        // 新增子任务
-                        onEvent(AppEvent.Task(TaskSectionEvent.AddSubtask(parentId, title)))
-                    },
-                    onToggleSubtask = { childId, done ->
-                        // 切换子任务完成状态
-                        onEvent(AppEvent.Task(TaskSectionEvent.ToggleSubtask(childId, done)))
-                    },
-                    getChildren = viewModel::getChildren,
-                    getParentProgress = viewModel::getParentProgress,
-                    onTaskClick = { task ->
-                        task.id?.let { id ->
-                            onEvent(AppEvent.TaskDetail(TaskDetailEvent.ShowDetail(id)))
+            // 主内容区域：根据当前页面显示不同内容
+            when (currentPage) {
+                AppPage.TaskList -> {
+                    // 任务列表页面（可被模糊的区域）
+                    Box(
+                        modifier = Modifier
+                            .padding(innerPadding)
+                            .fillMaxSize()
+                            .blur(radius = blurRadius)
+                    ) {
+                        TaskSection(
+                            state = state.taskState,
+                            onToggleTask = { task ->
+                                // 切换任务完成状态
+                                onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
+                            },
+                            onAddSubtask = { parentId, title ->
+                                // 新增子任务
+                                onEvent(AppEvent.Task(TaskSectionEvent.AddSubtask(parentId, title)))
+                            },
+                            onToggleSubtask = { childId, done ->
+                                // 切换子任务完成状态
+                                onEvent(AppEvent.Task(TaskSectionEvent.ToggleSubtask(childId, done)))
+                            },
+                            getChildren = viewModel::getChildren,
+                            getParentProgress = viewModel::getParentProgress,
+                            onTaskClick = { task ->
+                                task.id?.let { id ->
+                                    onEvent(AppEvent.TaskDetail(TaskDetailEvent.ShowDetail(id)))
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                AppPage.Settings -> {
+                    // 设置页面
+                    SettingsScreen(
+                        onNavigateBack = {
+                            currentPage = AppPage.TaskList
+                        },
+                        settingsState = settingsState,
+                        onSettingsChange = { newSettings ->
+                            settingsState = newSettings
+                        },
+                        onAddMemory = { content, category, importance, isActive ->
+                            onEvent(AppEvent.LongTermMemory(
+                                LongTermMemoryEvent.AddMemory(content, category, importance, isActive)
+                            ))
+                        },
+                        onEditMemory = { memory, content, category, importance, isActive ->
+                            onEvent(AppEvent.LongTermMemory(
+                                LongTermMemoryEvent.EditMemory(memory, content, category, importance, isActive)
+                            ))
+                        },
+                        onDeleteMemory = { memory ->
+                            onEvent(AppEvent.LongTermMemory(
+                                LongTermMemoryEvent.DeleteMemory(memory)
+                            ))
+                        },
+                        onToggleMemoryActive = { memory, isActive ->
+                            onEvent(AppEvent.LongTermMemory(
+                                LongTermMemoryEvent.ToggleMemoryActive(memory, isActive)
+                            ))
                         }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                    )
+                }
             }
+        }
         }
 
         // 聊天浮层（两种模式：Peek/Fullscreen）
@@ -304,6 +483,19 @@ fun MainScreen(
             onContentChange = { newContent ->
                 onEvent(AppEvent.TaskDetail(TaskDetailEvent.EditContent(newContent)))
             },
+            subtasks = state.taskDetailState.selectedTaskId?.let { viewModel.getChildren(it) } ?: emptyList(),
+            onToggleSubtask = { subtaskId, done ->
+                onEvent(AppEvent.Task(TaskSectionEvent.ToggleSubtask(subtaskId.toLong(), done)))
+            },
+            onEditSubtaskTitle = { subtaskId, newTitle ->
+                onEvent(AppEvent.Task(TaskSectionEvent.UpdateSubtaskTitle(subtaskId.toLong(), newTitle)))
+            },
+            onAddSubtask = { parentId, title, order ->
+                onEvent(AppEvent.Task(TaskSectionEvent.AddSubtask(parentId, title, order)))
+            },
+            onDeleteSubtask = { subtaskId ->
+                onEvent(AppEvent.Task(TaskSectionEvent.DeleteSubtask(subtaskId)))
+            },
             onDismiss = {
                 onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
             },
@@ -323,7 +515,26 @@ fun MainScreen(
                 taskId?.let { id ->
                     onEvent(AppEvent.TaskDetail(TaskDetailEvent.UpdatePriority(id, priority)))
                 }
-            }
+            },
+            onDivideSubtasks = { taskId ->
+                // 使用设置页面配置的策略触发子任务划分
+                onEvent(AppEvent.SubtaskDivision(
+                    SubtaskDivisionEvent.CreateFromSuggestions(
+                        taskId = taskId,
+                        strategy = settingsState.aiDivisionStrategy,
+                        maxSubtasks = settingsState.maxSubtasks,
+                        useAI = settingsState.useAI
+                    )
+                ))
+            },
+            onDeleteTask = { task ->
+                // 删除任务 (task.id为null表示是顶级task，使用selectedTaskId)
+                val taskId = task.id ?: state.taskDetailState.selectedTaskId
+                taskId?.let { id ->
+                    onEvent(AppEvent.TaskDetail(TaskDetailEvent.DeleteTask(id)))
+                }
+            },
+            isSubtaskDivisionLoading = state.taskDetailState.isSubtaskDivisionLoading
         )
 
         

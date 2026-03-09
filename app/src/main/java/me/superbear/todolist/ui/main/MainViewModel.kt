@@ -16,7 +16,6 @@ import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import me.superbear.todolist.assistant.AssistantActionParser
 import me.superbear.todolist.assistant.MockAssistantClient
 import me.superbear.todolist.assistant.RealAssistantClient
 import me.superbear.todolist.BuildConfig
@@ -34,8 +33,12 @@ import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerReduc
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityReducer
 import me.superbear.todolist.ui.main.state.TaskDetailEvent
+import me.superbear.todolist.ui.main.state.SubtaskDivisionEvent
+import me.superbear.todolist.ui.main.state.LongTermMemoryEvent
 import me.superbear.todolist.ui.main.state.AppEvent
 import me.superbear.todolist.ui.main.state.AppState
+import me.superbear.todolist.assistant.subtask.SubtaskDivisionService
+import me.superbear.todolist.data.repository.LongTermMemoryRepository
 
 /**
  * Refactored MainViewModel - Thin orchestrator that routes events to reducers
@@ -49,10 +52,15 @@ import me.superbear.todolist.ui.main.state.AppState
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val todoRepository = TodoRepository(application)
+    private val realAssistantClient = RealAssistantClient()
+    private val mockAssistantClient = MockAssistantClient()
     private val assistantController = AssistantController(
-        mockAssistantClient = MockAssistantClient(),
-        realAssistantClient = RealAssistantClient(),
-        assistantActionParser = AssistantActionParser()
+        mockAssistantClient = mockAssistantClient,
+        realAssistantClient = realAssistantClient
+    )
+    private val subtaskDivisionService = SubtaskDivisionService(
+        assistantClient = if (BuildConfig.USE_MOCK_ASSISTANT) mockAssistantClient else realAssistantClient,
+        todoRepository = todoRepository
     )
     private val json = Json { prettyPrint = true }
     
@@ -203,6 +211,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is AppEvent.DateTimePicker -> handleDateTimePickerEvent(event.event)
             is AppEvent.Priority -> handlePriorityEvent(event.event)
             is AppEvent.TaskDetail -> handleTaskDetailEvent(event.event)
+            is AppEvent.SubtaskDivision -> handleSubtaskDivisionEvent(event.event)
+            is AppEvent.LongTermMemory -> handleLongTermMemoryEvent(event.event)
             is AppEvent.SetUseMockAssistant -> {
                 _appState.update { it.copy(useMockAssistant = event.useMock) }
             }
@@ -254,10 +264,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.AddSubtask -> {
-                todoRepository.addTask(title = event.title, parentId = event.parentId)
+                Log.d("MainViewModel", "Adding subtask: ${event.title} to parent: ${event.parentId}, order: ${event.order}")
+                if (event.order != null) {
+                    // Insert at specific position
+                    todoRepository.insertTaskAt(
+                        title = event.title,
+                        parentId = event.parentId,
+                        order = event.order
+                    )
+                } else {
+                    // Add at the end (default behavior)
+                    todoRepository.addTask(
+                        title = event.title,
+                        parentId = event.parentId
+                    )
+                }
+            }
+            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.DeleteSubtask -> {
+                Log.d("MainViewModel", "Deleting subtask: ${event.subtaskId}")
+                viewModelScope.launch {
+                    todoRepository.deleteTask(event.subtaskId)
+                }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.ToggleSubtask -> {
                 todoRepository.toggleTaskStatus(event.childId, event.done)
+            }
+            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.UpdateSubtaskTitle -> {
+                viewModelScope.launch {
+                    todoRepository.updateTask(id = event.subtaskId, title = event.newTitle)
+                }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.LoadTasks -> {
                 loadTasks()
@@ -415,6 +450,191 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
+            is TaskDetailEvent.DeleteTask -> {
+                // 递归删除任务及其所有子任务
+                viewModelScope.launch {
+                    try {
+                        todoRepository.deleteTaskRecursively(event.taskId)
+                        Log.d("MainViewModel", "Recursively deleted task: ${event.taskId}")
+                        
+                        // 删除后自动关闭详情页面
+                        _appState.update { 
+                            it.copy(
+                                taskDetailState = it.taskDetailState.copy(
+                                    isVisible = false,
+                                    selectedTaskId = null,
+                                    editedTitle = "",
+                                    editedContent = ""
+                                ) 
+                            ) 
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Failed to delete task: ${event.taskId}", e)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleSubtaskDivisionEvent(event: SubtaskDivisionEvent) {
+        when (event) {
+            is SubtaskDivisionEvent.GenerateSuggestions -> {
+                generateSubtaskSuggestions(
+                    taskId = event.taskId,
+                    strategy = event.strategy,
+                    maxSubtasks = event.maxSubtasks,
+                    context = event.context,
+                    useAI = event.useAI
+                )
+            }
+            is SubtaskDivisionEvent.CreateFromSuggestions -> {
+                createSubtasksFromAI(
+                    taskId = event.taskId,
+                    strategy = event.strategy,
+                    maxSubtasks = event.maxSubtasks,
+                    context = event.context,
+                    useAI = event.useAI
+                )
+            }
+            is SubtaskDivisionEvent.BatchDivide -> {
+                batchDivideSubtasks(
+                    taskIds = event.taskIds,
+                    strategy = event.strategy,
+                    useAI = event.useAI
+                )
+            }
+        }
+    }
+
+    private fun generateSubtaskSuggestions(
+        taskId: Long,
+        strategy: me.superbear.todolist.assistant.subtask.DivisionStrategy?,
+        maxSubtasks: Int?,
+        context: String?,
+        useAI: Boolean
+    ) {
+        val task = _appState.value.taskState.items.find { it.id == taskId }
+        if (task == null) {
+            Log.e("MainViewModel", "Task not found for subtask generation: $taskId")
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                Log.d("MainViewModel", "Generating subtask suggestions for: ${task.title}")
+                val result = subtaskDivisionService.generateSubtaskSuggestions(
+                    task = task,
+                    strategy = strategy,
+                    maxSubtasks = maxSubtasks,
+                    context = context,
+                    useAI = useAI
+                )
+                
+                result.fold(
+                    onSuccess = { response ->
+                        Log.d("MainViewModel", "Generated ${response.subtasks.size} subtask suggestions")
+                        // TODO: 可以在这里添加UI状态更新，显示建议给用户确认
+                    },
+                    onFailure = { error ->
+                        Log.e("MainViewModel", "Failed to generate subtask suggestions", error)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Unexpected error in subtask generation", e)
+            }
+        }
+    }
+
+    private fun createSubtasksFromAI(
+        taskId: Long,
+        strategy: me.superbear.todolist.assistant.subtask.DivisionStrategy?,
+        maxSubtasks: Int?,
+        context: String?,
+        useAI: Boolean
+    ) {
+        val task = _appState.value.taskState.items.find { it.id == taskId }
+        if (task == null) {
+            Log.e("MainViewModel", "Task not found for subtask creation: $taskId")
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                // 设置加载状态为true
+                _appState.update { currentState ->
+                    currentState.copy(
+                        taskDetailState = currentState.taskDetailState.copy(
+                            isSubtaskDivisionLoading = true
+                        )
+                    )
+                }
+                
+                Log.d("MainViewModel", "Creating subtasks for: ${task.title}")
+                val result = subtaskDivisionService.divideAndCreateSubtasks(
+                    parentTask = task,
+                    strategy = strategy,
+                    maxSubtasks = maxSubtasks,
+                    context = context,
+                    useAI = useAI,
+                    forceCreate = true
+                )
+                
+                result.fold(
+                    onSuccess = { divisionResult ->
+                        Log.d("MainViewModel", "Successfully created ${divisionResult.createdTasks.size} subtasks")
+                        // UI will automatically update through Room Flow
+                    },
+                    onFailure = { error ->
+                        Log.e("MainViewModel", "Failed to create subtasks", error)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Unexpected error in subtask creation", e)
+            } finally {
+                // 无论成功还是失败，都清除加载状态
+                _appState.update { currentState ->
+                    currentState.copy(
+                        taskDetailState = currentState.taskDetailState.copy(
+                            isSubtaskDivisionLoading = false
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun batchDivideSubtasks(
+        taskIds: List<Long>,
+        strategy: me.superbear.todolist.assistant.subtask.DivisionStrategy?,
+        useAI: Boolean
+    ) {
+        val tasks = _appState.value.taskState.items.filter { it.id in taskIds }
+        if (tasks.isEmpty()) {
+            Log.e("MainViewModel", "No valid tasks found for batch division")
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                Log.d("MainViewModel", "Batch dividing ${tasks.size} tasks")
+                val result = subtaskDivisionService.batchDivideAndCreate(
+                    tasks = tasks,
+                    strategy = strategy,
+                    useAI = useAI
+                )
+                
+                result.fold(
+                    onSuccess = { results ->
+                        val totalCreated = results.sumOf { it.createdTasks.size }
+                        Log.d("MainViewModel", "Batch division completed: $totalCreated subtasks created")
+                    },
+                    onFailure = { error ->
+                        Log.e("MainViewModel", "Batch division failed", error)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Unexpected error in batch division", e)
+            }
         }
     }
 
@@ -562,10 +782,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun sendToAssistant(message: String, placeholderMessage: ChatMessage) {
+        // TODO: 获取长期记忆上下文
+        val memoryContext = "" // 暂时为空，后续需要从LongTermMemoryRepository获取
+        
         val result = assistantController.send(
             message,
             _appState.value.chatOverlayState.messages,
-            _appState.value.useMockAssistant
+            _appState.value.useMockAssistant,
+            memoryContext
         )
         
         result.onSuccess { envelope ->
@@ -653,13 +877,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             override suspend fun updateTask(task: Task) {
                 val id = task.id ?: return
-                todoRepository.updateTask(
-                    id = id,
-                    title = task.title,
-                    content = task.content,
-                    priority = task.priority,
-                    dueAt = task.dueAt
-                )
+                
+                // Get current task to check what needs updating
+                val currentTask = todoRepository.getTaskById(id)
+                if (currentTask == null) {
+                    Log.w("MainViewModel", "Task not found for update: $id")
+                    return
+                }
+                
+                // Handle status changes separately using the dedicated method
+                if (currentTask.status != task.status) {
+                    val isDone = task.status == TaskStatus.DONE
+                    todoRepository.toggleTaskStatus(id, isDone)
+                    Log.d("MainViewModel", "Updated task status: $id -> ${task.status}")
+                }
+                
+                // Check if any other fields need updating
+                val needsFieldUpdate = currentTask.title != task.title ||
+                    currentTask.content != task.content ||
+                    currentTask.priority != task.priority ||
+                    currentTask.dueAt != task.dueAt
+                
+                // Only call updateTask if other fields actually changed
+                if (needsFieldUpdate) {
+                    todoRepository.updateTask(
+                        id = id,
+                        title = task.title,
+                        content = task.content,
+                        priority = task.priority,
+                        dueAt = task.dueAt
+                    )
+                    Log.d("MainViewModel", "Updated task fields: $id")
+                }
             }
 
             override suspend fun deleteTask(taskId: Long) {
@@ -698,6 +947,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _appState.value.taskState.items.find { it.id == selectedTaskId }
         } else {
             null
+        }
+    }
+
+    /**
+     * 处理长期记忆事件
+     */
+    private fun handleLongTermMemoryEvent(event: LongTermMemoryEvent) {
+        when (event) {
+            is LongTermMemoryEvent.AddMemory -> {
+                viewModelScope.launch {
+                    try {
+                        // 这里需要注入LongTermMemoryRepository
+                        // 暂时添加日志，后续需要实现依赖注入
+                        Log.d("MainViewModel", "Add memory: ${event.content}")
+                        // longTermMemoryRepository.createMemory(
+                        //     content = event.content,
+                        //     category = event.category,
+                        //     importance = event.importance,
+                        //     isActive = event.isActive
+                        // )
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error adding memory", e)
+                    }
+                }
+            }
+            is LongTermMemoryEvent.EditMemory -> {
+                viewModelScope.launch {
+                    try {
+                        Log.d("MainViewModel", "Edit memory: ${event.memory.id}")
+                        // longTermMemoryRepository.updateMemory(
+                        //     id = event.memory.id!!,
+                        //     content = event.content,
+                        //     category = event.category,
+                        //     importance = event.importance,
+                        //     isActive = event.isActive
+                        // )
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error editing memory", e)
+                    }
+                }
+            }
+            is LongTermMemoryEvent.DeleteMemory -> {
+                viewModelScope.launch {
+                    try {
+                        Log.d("MainViewModel", "Delete memory: ${event.memory.id}")
+                        // longTermMemoryRepository.deleteMemory(event.memory.id!!)
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error deleting memory", e)
+                    }
+                }
+            }
+            is LongTermMemoryEvent.ToggleMemoryActive -> {
+                viewModelScope.launch {
+                    try {
+                        Log.d("MainViewModel", "Toggle memory active: ${event.memory.id} -> ${event.isActive}")
+                        // longTermMemoryRepository.toggleMemoryActive(event.memory.id!!, event.isActive)
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error toggling memory active", e)
+                    }
+                }
+            }
+            is LongTermMemoryEvent.LoadMemories -> {
+                viewModelScope.launch {
+                    try {
+                        Log.d("MainViewModel", "Load memories")
+                        // val memories = longTermMemoryRepository.getAllMemories()
+                        // 更新设置状态中的记忆列表
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error loading memories", e)
+                    }
+                }
+            }
         }
     }
 }

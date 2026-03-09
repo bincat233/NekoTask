@@ -4,10 +4,21 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-08-20T09:46:10.871848262Z">
+        <DropdownSelection timestamp="2026-03-09T15:18:49.468329036Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="Default" identifier="serial=192.168.0.90:39265;connection=08ee9fd0" />
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=RFCMB008BWP" />
+            </handle>
+          </Target>
+        </DropdownSelection>
+        <DialogSelection />
+      </SelectionState>
+      <SelectionState runConfigName="All Tests">
+        <option name="selectionMode" value="DROPDOWN" />
+        <DropdownSelection timestamp="2026-02-24T04:07:17.363399140Z">
+          <Target type="DEFAULT_BOOT">
+            <handle>
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=RFCMB008BWP" />
             </handle>
           </Target>
         </DropdownSelection>

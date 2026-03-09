@@ -2,6 +2,10 @@ package me.superbear.todolist.data.model
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
+import me.superbear.todolist.domain.entities.LongTermMemory
+import me.superbear.todolist.data.dao.LongTermMemoryDao
+import me.superbear.todolist.data.converters.InstantConverter
 
 /**
  * Room Database class for the TodoList application.
@@ -24,11 +28,12 @@ import androidx.room.RoomDatabase
  * - Room generates the implementation automatically
  */
 @Database(
-    entities = [TaskEntity::class], 
+    entities = [TaskEntity::class, LongTermMemory::class], 
     views = [UnfinishedTasksView::class],
-    version = 3, 
+    version = 4, 
     exportSchema = false
 )
+@TypeConverters(InstantConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     /**
      * Provides access to task-related database operations.
@@ -41,4 +46,11 @@ abstract class AppDatabase : RoomDatabase() {
      * Provides access to ordering and reparenting transactional operations.
      */
     abstract fun taskOrderOpsDao(): TaskOrderOpsDao
+
+    /**
+     * Provides access to long-term memory database operations.
+     * 
+     * @return LongTermMemoryDao instance for performing CRUD operations on memories
+     */
+    abstract fun longTermMemoryDao(): LongTermMemoryDao
 }
