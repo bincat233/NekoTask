@@ -115,7 +115,7 @@ fun TaskDetailSheet(
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState = sheetState,
-            dragHandle = { BottomSheetDefaults.DragHandle() },
+            dragHandle = null,
             modifier = modifier,
         ) {
             // ── 区域 A：可滚动内容区 ──────────────────────────────────
