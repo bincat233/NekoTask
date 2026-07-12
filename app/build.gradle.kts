@@ -6,7 +6,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.gms.google.services)
 }
 
 val localProperties = Properties()
@@ -40,10 +39,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY") ?: ""}\"")
+            // No default OpenAI key in release builds - the dev's local.properties key must
+            // never be compiled into a package meant for real users. Real users enter their
+            // own key in Settings; the app runs fine without one, AI features just no-op until then.
+            buildConfigField("String", "OPENAI_API_KEY", "\"\"")
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
             buildConfigField("String", "OPENAI_MODEL", "\"${localProperties.getProperty("OPENAI_MODEL") ?: "gpt-4.1-mini"}\"")
-            buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
             // Controls whether to force no blur fallback even on supported versions
             buildConfigField("boolean", "DEBUG_FORCE_NO_BLUR_FALLBACK", "false")
             // Peek timeout debug flags
@@ -51,10 +52,11 @@ android {
             buildConfigField("long", "DEBUG_PEEK_TIMEOUT_MS", "-1L")
         }
         debug {
+            // Debug-only convenience default: read the developer's own key from
+            // local.properties (gitignored) so debug builds work out of the box.
             buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY") ?: ""}\"")
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
             buildConfigField("String", "OPENAI_MODEL", "\"${localProperties.getProperty("OPENAI_MODEL") ?: "gpt-4.1-mini"}\"")
-            buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
             buildConfigField("boolean", "FORCE_DELETE_DB", "true")
             // Controls whether to force no blur fallback even on supported versions
             buildConfigField("boolean", "DEBUG_FORCE_NO_BLUR_FALLBACK", "false")
@@ -74,7 +76,6 @@ android {
 
 dependencies {
     implementation("ai.koog:agents-core-android:1.0.0")
-    implementation(libs.firebase.ai)
     val room_version = "2.7.2"
     implementation("androidx.room:room-runtime:${room_version}")
     implementation("androidx.room:room-ktx:${room_version}")
