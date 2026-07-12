@@ -42,6 +42,7 @@
     <string name="task_detail_content_placeholder">添加详情...</string>
     <string name="task_detail_no_due_date">无截止日期</string>
     <string name="task_detail_priority">优先级</string>
+    <string name="task_detail_priority_label">优先级: %1$s</string>
     <string name="task_detail_ai_divide">AI子任务划分</string>
     <string name="task_detail_add_subtask">添加子任务</string>
     <string name="task_detail_set_reminder">设置提醒</string>
@@ -108,4 +109,11 @@
     <string name="manual_add_description_placeholder">描述</string>
     <string name="manual_add_subtasks_desc">子任务</string>
     <string name="manual_add_send">发送</string>
+    <string name="settings_language_title">语言</string>
+    <string name="language_auto">跟随系统</string>
+    <string name="language_en">英文</string>
+    <string name="language_zh">中文 (简体)</string>
+    <string name="datetime_next">下一步</string>
+    <string name="datetime_confirm">确认</string>
+    <string name="chat_empty">暂无消息</string>
 </resources>

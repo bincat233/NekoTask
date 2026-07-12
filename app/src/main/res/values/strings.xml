@@ -1,3 +1,119 @@
 <resources>
     <string name="app_name">NekoTask</string>
+
+    <!-- General -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="add">Add</string>
+    <string name="back">Back</string>
+    <string name="none">None</string>
+    <string name="done">Done</string>
+    <string name="hide">Hide</string>
+    <string name="show">Show</string>
+
+    <!-- Drawer Menu -->
+    <string name="menu_tasks">Tasks</string>
+    <string name="menu_notes">Notes</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_about">About</string>
+    <string name="open_menu">Open menu</string>
+    <string name="more_options">More options</string>
+
+    <!-- Main Screen / Chat -->
+    <string name="ai_input_placeholder">Tell AI what you want to do…</string>
+    <string name="send_message">Send</string>
+    <string name="assistant_avatar">Assistant Avatar</string>
+    <string name="error_fetch_response">[Error: unable to fetch response]</string>
+
+    <!-- Task List -->
+    <string name="section_unfinished">Unfinished</string>
+    <string name="section_finished">Finished</string>
+    <string name="expand">Expand</string>
+    <string name="collapse">Collapse</string>
+    <string name="add_subtask_inline">+ Subtask</string>
+    <string name="new_subtask_title">New subtask</string>
+    <string name="subtask_title_placeholder">Subtask title</string>
+
+    <!-- Task Detail -->
+    <string name="task_detail_title_placeholder">Title</string>
+    <string name="task_detail_content_placeholder">Add details…</string>
+    <string name="task_detail_no_due_date">No due date</string>
+    <string name="task_detail_priority">Priority</string>
+    <string name="task_detail_priority_label">Priority: %1$s</string>
+    <string name="task_detail_ai_divide">AI Subtask Division</string>
+    <string name="task_detail_add_subtask">Add subtask</string>
+    <string name="task_detail_set_reminder">Set reminder</string>
+    <string name="task_detail_subtasks_title">Subtasks (%1$d)</string>
+    <string name="priority_high">High</string>
+    <string name="priority_medium">Medium</string>
+    <string name="priority_low">Low</string>
+    <string name="priority_none">None</string>
+    <string name="due_date">Due date</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_ai_provider">AI Provider</string>
+    <string name="settings_api_key_title">API Key (%1$s)</string>
+    <string name="settings_api_key_label">%1$s API Key</string>
+    <string name="settings_api_key_hint">Keys are stored locally and never uploaded to any server</string>
+    <string name="settings_model_title">Model</string>
+    <string name="settings_model_refresh">Refresh model list</string>
+    <string name="settings_model_select">Select Model</string>
+    <string name="settings_model_count_msg">Fetched %1$d available models from %2$s</string>
+    <string name="settings_model_fallback_msg">Showing built-in list, click refresh to fetch latest models from %1$s</string>
+    <string name="settings_ai_division_title">AI Subtask Division</string>
+    <string name="settings_ai_division_enable">Enable AI intelligent division</string>
+    <string name="settings_ai_division_enable_desc">Intelligently generate subtasks based on task content</string>
+    <string name="settings_ai_division_template_desc">Use preset templates to generate subtasks</string>
+    <string name="settings_ai_strategy_title">Division Strategy</string>
+    <string name="settings_max_subtasks_title">Max Subtasks: %1$d</string>
+    <string name="settings_max_subtasks_desc">Control the upper limit of subtasks generated per division</string>
+    <string name="strategy_detailed">Detailed</string>
+    <string name="strategy_detailed_desc">Generate more fine-grained subtasks, suitable for complex projects</string>
+    <string name="strategy_balanced">Balanced</string>
+    <string name="strategy_balanced_desc">Moderate number and granularity of subtasks, recommended</string>
+    <string name="strategy_simplified">Simplified</string>
+    <string name="strategy_simplified_desc">Generate fewer high-level subtasks, suitable for simple tasks</string>
+
+    <!-- Long Term Memory -->
+    <string name="memory_title">AI Assistant Long-term Memory</string>
+    <string name="memory_desc">Manage AI assistant\'s long-term memory, which will be provided to AI in every conversation</string>
+    <string name="memory_empty">No memories yet, click + to add</string>
+    <string name="memory_add_title">Add Memory</string>
+    <string name="memory_edit_title">Edit Memory</string>
+    <string name="memory_content_label">Memory Content</string>
+    <string name="memory_content_placeholder">Enter important information the AI assistant needs to remember...</string>
+    <string name="memory_category_label">Category</string>
+    <string name="memory_importance_label">Importance: %1$d</string>
+    <string name="memory_importance_low">Low</string>
+    <string name="memory_importance_high">High</string>
+    <string name="memory_active_label">Active Status</string>
+    <string name="memory_delete_content_desc">Delete memory</string>
+    <string name="memory_edit_content_desc">Edit memory</string>
+    <string name="memory_add_content_desc">Add memory</string>
+
+    <!-- Memory Categories -->
+    <string name="cat_general">General</string>
+    <string name="cat_preferences">Preferences</string>
+    <string name="cat_work_habits">Work Habits</string>
+    <string name="cat_project_info">Project Info</string>
+    <string name="cat_personal">Personal</string>
+    <string name="cat_context">Context</string>
+
+    <!-- Manual Add -->
+    <string name="manual_add_title">Manual Add Task</string>
+    <string name="manual_add_title_placeholder">What would you like to do?</string>
+    <string name="manual_add_description_placeholder">Description</string>
+    <string name="manual_add_subtasks_desc">Subtasks</string>
+    <string name="manual_add_send">Send</string>
+    <string name="settings_language_title">Language</string>
+    <string name="language_auto">Follow System</string>
+    <string name="language_en">English</string>
+    <string name="language_zh">Chinese (Simplified)</string>
+    <string name="datetime_next">Next</string>
+    <string name="datetime_confirm">Confirm</string>
+    <string name="chat_empty">No messages yet</string>
 </resources>
