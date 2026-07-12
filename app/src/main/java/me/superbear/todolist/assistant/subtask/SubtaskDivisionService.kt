@@ -98,35 +98,17 @@ class SubtaskDivisionService(
         suggestions: SubtaskDivisionResponse
     ): Result<SubtaskDivisionResult> {
         return try {
-            val now = Clock.System.now()
-            val createdTasks = mutableListOf<Task>()
-
-            suggestions.subtasks.sortedBy { it.estimatedOrder }.forEach { suggestion ->
-                val rowId = todoRepository.addTask(
+            val drafts = suggestions.subtasks.map { suggestion ->
+                me.superbear.todolist.data.SubtaskDraft(
                     title = suggestion.title,
-                    parentId = parentTask.id,
                     content = suggestion.content,
                     priority = suggestion.priority,
                     dueAt = null,
-                    status = TaskStatus.OPEN
-                ).getOrThrow()
-
-                val tempTask = Task(
-                    id = rowId,
-                    title = suggestion.title,
-                    content = suggestion.content,
-                    status = TaskStatus.OPEN,
-                    priority = suggestion.priority,
-                    parentId = parentTask.id,
-                    orderInParent = suggestion.estimatedOrder.toLong(),
-                    createdAt = now,
-                    updatedAt = now,
-                    dueAt = null
+                    estimatedOrder = suggestion.estimatedOrder
                 )
-                createdTasks.add(tempTask)
-
-                Log.d("SubtaskDivisionService", "Created subtask: ${suggestion.title}")
             }
+
+            val createdTasks = todoRepository.addDetailedSubtasks(parentTask.id!!, drafts).getOrThrow()
 
             Result.success(
                 SubtaskDivisionResult(

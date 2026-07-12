@@ -81,7 +81,10 @@ fun FullscreenMessageList(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                 ) {
-                    if (!isUser && message.status == MessageStatus.Sending) {
+                    // Show the typing indicator only until the first streamed token arrives; once
+            // message.text is non-blank, swap to the real (still-growing) bubble instead of
+            // waiting for status to flip to Sent, or streamed text never renders incrementally.
+            if (!isUser && message.status == MessageStatus.Sending && message.text.isBlank()) {
                         AssistantTypingBubble()
                     } else {
                         ChatBubble(
@@ -162,7 +165,10 @@ fun PeekMessageList(
                     }
                 }
 
-            if (!isUser && message.status == MessageStatus.Sending) {
+            // Show the typing indicator only until the first streamed token arrives; once
+            // message.text is non-blank, swap to the real (still-growing) bubble instead of
+            // waiting for status to flip to Sent, or streamed text never renders incrementally.
+            if (!isUser && message.status == MessageStatus.Sending && message.text.isBlank()) {
                 AssistantTypingBubble(
                     modifier = bubbleModifier
                 )

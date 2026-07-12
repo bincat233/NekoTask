@@ -18,6 +18,7 @@ import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.executor.model.PromptExecutor
+import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.message.Message
@@ -41,6 +42,28 @@ class TodoAgent(
     private val repository: TodoRepository,
     private val memoryRepository: LongTermMemoryRepository
 ) : ChatAgent, LlmRuntime {
+
+    companion object {
+        // Koog ships no built-in model catalog for DeepSeek (it's routed through OpenAILLMClient
+        // via a custom baseUrl), so capabilities must be declared by hand — otherwise
+        // OpenAILLMClient.determineParams can't tell which param shape to use and throws.
+        // Verified against https://api-docs.deepseek.com/api/create-chat-completion/ and the
+        // tool_calls guide: chat-completions style endpoint (no OpenAI "Responses" endpoint, no
+        // `n` param for multiple choices, no vision/document input), tools/tool_choice supported,
+        // response_format supports basic {"type":"json_object"} only (no json_schema/strict mode
+        // for general responses — only for tool-call arguments, which Koog has no capability for).
+        private val DEEPSEEK_CAPABILITIES = listOf(
+            LLMCapability.Temperature,
+            LLMCapability.Tools,
+            LLMCapability.ToolChoice,
+            LLMCapability.Completion,
+            LLMCapability.Schema.JSON.Basic,
+            LLMCapability.OpenAIEndpoint.Completions
+        )
+        val DeepSeekV4Flash = LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-flash", capabilities = DEEPSEEK_CAPABILITIES)
+        val DeepSeekV4Pro = LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-pro", capabilities = DEEPSEEK_CAPABILITIES)
+    }
+
     private var openAIKey: String = ""
     private var deepSeekKey: String = ""
     private var selectedProvider: LLMProvider = LLMProvider.OpenAI
@@ -61,6 +84,13 @@ create one parent task with ordered, checkable subtasks by calling add_task_with
 If the user asks to add a checklist to an existing task, call add_subtasks with that parent task ID.
 Do not put multi-item checklists into a task's content field.
 Use task content only for short notes that are not independently checkable.
+For multiple independent, unrelated tasks in one request, call add_tasks once with all of them
+instead of calling add_task repeatedly.
+To clear a task's existing content or due date with update_task, pass the literal string "remove"
+for that field; omitting the field leaves it unchanged.
+CURRENT_TODO_STATE does not include task content/notes. Before appending to or referencing a
+task's existing notes, call get_task first to see its current content instead of assuming or
+overwriting it blindly.
 
 You also have long-term memory tools. When the user shares a lasting preference, habit, or
 personal fact worth remembering across conversations, call add_memory. If MEMORY CONTEXT
@@ -235,7 +265,7 @@ Don't save trivial or one-off details.
         selectedProvider = provider
         selectedModel = when (provider) {
             LLMProvider.OpenAI -> OpenAIModels.Chat.GPT4o
-            LLMProvider.DeepSeek -> LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-flash")
+            LLMProvider.DeepSeek -> DeepSeekV4Flash
             else -> selectedModel
         }
     }
@@ -247,9 +277,15 @@ Don't save trivial or one-off details.
     override fun selectModelByName(name: String) {
         val known = when (selectedProvider) {
             LLMProvider.OpenAI -> listOf(
-                LLModel(provider = LLMProvider.OpenAI, id = "gpt-5"),
-                LLModel(provider = LLMProvider.OpenAI, id = "gpt-5-mini"),
-                LLModel(provider = LLMProvider.OpenAI, id = "gpt-5-nano"),
+                OpenAIModels.Chat.GPT5_5,
+                OpenAIModels.Chat.GPT5_4,
+                OpenAIModels.Chat.GPT5_4Mini,
+                OpenAIModels.Chat.GPT5_4Nano,
+                OpenAIModels.Chat.GPT5_2,
+                OpenAIModels.Chat.GPT5_1,
+                OpenAIModels.Chat.GPT5,
+                OpenAIModels.Chat.GPT5Mini,
+                OpenAIModels.Chat.GPT5Nano,
                 OpenAIModels.Chat.GPT4o,
                 OpenAIModels.Chat.GPT4oMini,
                 OpenAIModels.Chat.GPT4_1,
@@ -259,8 +295,8 @@ Don't save trivial or one-off details.
                 OpenAIModels.Chat.O4Mini
             )
             LLMProvider.DeepSeek -> listOf(
-                LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-flash"),
-                LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-pro")
+                DeepSeekV4Flash,
+                DeepSeekV4Pro
             )
             else -> emptyList()
         }

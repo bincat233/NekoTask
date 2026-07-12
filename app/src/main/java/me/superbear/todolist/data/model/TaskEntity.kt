@@ -69,5 +69,9 @@ data class TaskEntity(
 
     /** Order within the same parent (for manual reordering) */
     @ColumnInfo(name = "order_in_parent")
-    val orderInParent: Long = 0
+    val orderInParent: Long = 0,
+
+    /** Globally unique, stable identity for this row, independent of the local autoincrement id. Not yet used anywhere; laid down for a future sync backend. */
+    @ColumnInfo(name = "uuid")
+    val uuid: String = java.util.UUID.randomUUID().toString()
 )

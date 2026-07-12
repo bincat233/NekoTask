@@ -39,6 +39,9 @@ enum class TaskStatus {
  * @property updatedAt Optional last updated time.
  * @property parentId Optional parent task id. Use this as the single source of truth for hierarchy.
  * @property orderInParent Ordering within the same parent; larger values appear later. Defaults to 0.
+ * @property uuid Globally unique, stable identity independent of [id]. Not yet used anywhere; laid
+ *   down for a future sync backend. Callers mapping between [Task] and its persisted representation
+ *   must thread this value through explicitly — the default only fires for brand-new instances.
  */
 data class Task(
     val id: Long? = null,
@@ -52,5 +55,6 @@ data class Task(
     val origin: String? = null,
     val updatedAt: Instant? = null,
     val parentId: Long? = null,
-    val orderInParent: Long = 0
+    val orderInParent: Long = 0,
+    val uuid: String = java.util.UUID.randomUUID().toString()
 )

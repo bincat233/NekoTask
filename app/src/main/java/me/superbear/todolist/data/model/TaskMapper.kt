@@ -29,7 +29,8 @@ fun Task.toEntity(): TaskEntity {
         updatedAt = updatedAt?.toEpochMilliseconds(),
         dueAt = dueAt?.toEpochMilliseconds(),
         parentId = parentId,
-        orderInParent = orderInParent
+        orderInParent = orderInParent,
+        uuid = uuid
     )
 }
 
@@ -49,7 +50,8 @@ fun TaskEntity.toDomain(): Task {
         updatedAt = updatedAt?.let { Instant.fromEpochMilliseconds(it) },
         dueAt = dueAt?.let { Instant.fromEpochMilliseconds(it) },
         parentId = parentId,
-        orderInParent = orderInParent
+        orderInParent = orderInParent,
+        uuid = uuid
     )
 }
 

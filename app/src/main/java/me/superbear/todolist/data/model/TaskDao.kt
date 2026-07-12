@@ -274,8 +274,8 @@ interface TaskDao {
      * @param parentId Parent ID for validation (optional)
      * @return Number of rows updated
      */
-    @Query("UPDATE tasks SET order_in_parent = :newOrder WHERE id = :id AND (:parentId IS NULL OR parent_id = :parentId)")
-    suspend fun updateOrder(id: Long, newOrder: Long, parentId: Long? = null): Int
+    @Query("UPDATE tasks SET order_in_parent = :newOrder, updated_at = :updatedAt WHERE id = :id AND (:parentId IS NULL OR parent_id = :parentId)")
+    suspend fun updateOrder(id: Long, newOrder: Long, updatedAt: Long, parentId: Long? = null): Int
 
     /**
      * Bulk shifts order values for tasks within a parent.
@@ -287,12 +287,12 @@ interface TaskDao {
      * @return Number of rows updated
      */
     @Query("""
-        UPDATE tasks 
-        SET order_in_parent = order_in_parent + :delta 
+        UPDATE tasks
+        SET order_in_parent = order_in_parent + :delta, updated_at = :updatedAt
         WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
         AND order_in_parent >= :fromInclusive
     """)
-    suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long): Int
+    suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long, updatedAt: Long): Int
 
     /**
      * Reorders a task within its parent atomically.
@@ -302,9 +302,10 @@ interface TaskDao {
      * @param parentId Parent task ID (null for root-level tasks)
      * @param taskId ID of the task to move
      * @param newOrder New order position (0-based)
+     * @param updatedAt Timestamp written to every sibling row whose order actually changes
      */
     @Transaction
-    suspend fun reorderWithinParent(parentId: Long?, taskId: Long, newOrder: Long) {
+    suspend fun reorderWithinParent(parentId: Long?, taskId: Long, newOrder: Long, updatedAt: Long) {
         // Fetch siblings ordered by order_in_parent then created_at for stable ordering
         val siblings = getSiblings(parentId).sortedWith(
             compareBy<TaskEntity> { it.orderInParent }.thenBy { it.createdAt }
@@ -324,7 +325,7 @@ interface TaskDao {
         // Persist consecutive order values
         mutable.forEachIndexed { index, sibling ->
             if (sibling.orderInParent != index.toLong()) {
-                updateOrder(sibling.id, index.toLong(), parentId)
+                updateOrder(sibling.id, index.toLong(), updatedAt, parentId)
             }
         }
     }
@@ -488,8 +489,8 @@ interface TaskOrderOpsDao {
     /**
      * Internal helper to update both parent_id and order_in_parent in one statement.
      */
-    @Query("UPDATE tasks SET parent_id = :newParentId, order_in_parent = :newOrder WHERE id = :taskId")
-    suspend fun updateParentAndOrder(taskId: Long, newParentId: Long?, newOrder: Long): Int
+    @Query("UPDATE tasks SET parent_id = :newParentId, order_in_parent = :newOrder, updated_at = :updatedAt WHERE id = :taskId")
+    suspend fun updateParentAndOrder(taskId: Long, newParentId: Long?, newOrder: Long, updatedAt: Long): Int
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): TaskEntity?
@@ -502,33 +503,33 @@ interface TaskOrderOpsDao {
     suspend fun getSiblings(parentId: Long?): List<TaskEntity>
 
     @Query("""
-        UPDATE tasks 
-        SET order_in_parent = order_in_parent + :delta 
+        UPDATE tasks
+        SET order_in_parent = order_in_parent + :delta, updated_at = :updatedAt
         WHERE ((:parentId IS NULL AND parent_id IS NULL) OR parent_id = :parentId)
         AND order_in_parent >= :fromInclusive
     """)
-    suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long): Int
+    suspend fun bulkShiftOrders(parentId: Long?, fromInclusive: Long, delta: Long, updatedAt: Long): Int
 
     @Transaction
-    suspend fun reindexParent(parentId: Long?) {
+    suspend fun reindexParent(parentId: Long?, updatedAt: Long) {
         val siblings = getSiblings(parentId)
         siblings.forEachIndexed { index, s ->
             if (s.orderInParent != index.toLong()) {
                 // Only update when value changes to reduce writes
-                updateOrderInternal(s.id, index.toLong())
+                updateOrderInternal(s.id, index.toLong(), updatedAt)
             }
         }
     }
 
-    @Query("UPDATE tasks SET order_in_parent = :newOrder WHERE id = :id")
-    suspend fun updateOrderInternal(id: Long, newOrder: Long): Int
+    @Query("UPDATE tasks SET order_in_parent = :newOrder, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateOrderInternal(id: Long, newOrder: Long, updatedAt: Long): Int
 
     /**
      * Moves a task to a new parent, optionally to a specific index, atomically.
      * If newIndex is null, appends to end.
      */
     @Transaction
-    suspend fun moveToParent(taskId: Long, newParentId: Long?, newIndex: Long?) {
+    suspend fun moveToParent(taskId: Long, newParentId: Long?, newIndex: Long?, updatedAt: Long) {
         val task = getTaskById(taskId) ?: return
         val oldParentId = task.parentId
         val oldOrder = task.orderInParent
@@ -543,13 +544,13 @@ interface TaskOrderOpsDao {
             val insertAt = newIndex?.coerceIn(0L, mutable.size.toLong())?.toInt() ?: mutable.size
             mutable.add(insertAt, item)
             mutable.forEachIndexed { idx, s ->
-                if (s.orderInParent != idx.toLong()) updateOrderInternal(s.id, idx.toLong())
+                if (s.orderInParent != idx.toLong()) updateOrderInternal(s.id, idx.toLong(), updatedAt)
             }
             return
         }
 
         // 1) Close gap in old parent (shift down from oldOrder+1)
-        bulkShiftOrders(oldParentId, oldOrder + 1L, -1L)
+        bulkShiftOrders(oldParentId, oldOrder + 1L, -1L, updatedAt)
 
         // 2) Decide insert position in new parent
         val newSiblings = getSiblings(newParentId)
@@ -558,10 +559,10 @@ interface TaskOrderOpsDao {
 
         // 3) Make space in new parent if inserting not at end
         if (insertAt < newSiblings.size.toLong()) {
-            bulkShiftOrders(newParentId, insertAt, 1L)
+            bulkShiftOrders(newParentId, insertAt, 1L, updatedAt)
         }
 
         // 4) Update the task's parent and order
-        updateParentAndOrder(taskId, newParentId, insertAt)
+        updateParentAndOrder(taskId, newParentId, insertAt, updatedAt)
     }
 }

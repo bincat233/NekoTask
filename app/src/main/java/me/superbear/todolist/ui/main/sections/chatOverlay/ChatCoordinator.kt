@@ -46,7 +46,7 @@ class ChatCoordinator(
             timestamp = Clock.System.now(), status = MessageStatus.Sent
         )
         val assistantMessage = ChatMessage(
-            sender = Sender.Assistant, text = "...",
+            sender = Sender.Assistant, text = "",
             timestamp = Clock.System.now(), status = MessageStatus.Sending,
             replyToId = userMessage.id
         )

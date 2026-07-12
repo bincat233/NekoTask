@@ -2,12 +2,15 @@ package me.superbear.todolist.ui.main.sections.subtaskDivision
 
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.superbear.todolist.assistant.LlmRuntime
 import me.superbear.todolist.assistant.subtask.DivisionStrategy
 import me.superbear.todolist.assistant.subtask.SubtaskDivisionService
 import me.superbear.todolist.data.TodoRepository
-import me.superbear.todolist.ui.main.sections.taskDetail.TaskDetailCoordinator
 import me.superbear.todolist.ui.main.sections.tasks.TaskListCoordinator
 
 /**
@@ -19,9 +22,11 @@ class SubtaskDivisionCoordinator(
     private val llmRuntime: LlmRuntime,
     private val todoRepository: TodoRepository,
     private val taskListCoordinator: TaskListCoordinator,
-    private val taskDetailCoordinator: TaskDetailCoordinator,
     private val viewModelScope: CoroutineScope
 ) {
+    private val _state = MutableStateFlow(SubtaskDivisionState())
+    val state: StateFlow<SubtaskDivisionState> = _state.asStateFlow()
+
     private fun getSubtaskDivisionService(): SubtaskDivisionService {
         return SubtaskDivisionService(
             promptExecutor = llmRuntime.buildExecutor(),
@@ -94,7 +99,7 @@ class SubtaskDivisionCoordinator(
 
         viewModelScope.launch {
             try {
-                taskDetailCoordinator.setSubtaskDivisionLoading(true)
+                _state.update { it.copy(isSubtaskDivisionLoading = true) }
                 val result = getSubtaskDivisionService().divideAndCreateSubtasks(
                     parentTask = task, strategy = strategy, maxSubtasks = maxSubtasks,
                     context = context, useAI = useAI, forceCreate = true
@@ -113,7 +118,7 @@ class SubtaskDivisionCoordinator(
             } catch (e: Exception) {
                 Log.e("SubtaskDivisionCoordinator", "Unexpected error in subtask creation", e)
             } finally {
-                taskDetailCoordinator.setSubtaskDivisionLoading(false)
+                _state.update { it.copy(isSubtaskDivisionLoading = false) }
             }
         }
     }
