@@ -33,47 +33,18 @@ import me.superbear.todolist.domain.entities.TaskStatus
  * fire-and-forget repository jobs.
  */
 class TodoRepository(
-    private val context: Context,
+    internal val database: AppDatabase,
     private val seedManager: SeedManager? = null
 ) {
-
-    internal val database: AppDatabase by lazy {
-        val builder = Room.databaseBuilder(
-            context.applicationContext,
-            AppDatabase::class.java,
-            "todolist_database"
-        )
-        if (BuildConfig.DEBUG) {
-            // Safer for development; consider explicit migrations for release builds.
-            builder.fallbackToDestructiveMigration(false)
-        }
-        builder.build()
-    }
 
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val tasks: Flow<List<Task>> = database.taskDao().observeAll().map { entities ->
         entities.toDomain()
     }
-
-    private val _tasksStateFlow = MutableStateFlow<List<Task>>(emptyList())
-    val tasksStateFlow: StateFlow<List<Task>> = _tasksStateFlow.asStateFlow()
-
-    init {
         // IMPORTANT: Delete database before lazy initialization if this is ever re-enabled.
-        if (BuildConfig.DEBUG && false) {
-            Log.w("TodoRepository", "FORCE_DELETE_DB is true, deleting database.")
-            context.deleteDatabase("todolist_database")
-            seedManager?.resetSeedingFlagForTesting()
-        }
-
+    init {
         initializeDatabase()
-
-        repositoryScope.launch {
-            tasks.collect { taskList ->
-                _tasksStateFlow.value = taskList
-            }
-        }
     }
 
     private suspend fun <T> dbWrite(description: String, block: suspend () -> T): Result<T> =
@@ -224,6 +195,42 @@ class TodoRepository(
         }
     }
 
+    suspend fun addDetailedSubtasks(
+        parentId: Long,
+        subtasks: List<SubtaskDraft>
+    ): Result<List<Task>> = dbWrite("add ${subtasks.size} detailed subtasks under $parentId") {
+        require(subtasks.isNotEmpty()) { "At least one subtask is required" }
+
+        database.withTransaction {
+            val parent = database.taskDao().getTaskById(parentId)?.toDomain()
+                ?: throw IllegalArgumentException("Parent task not found: $parentId")
+            val now = Clock.System.now()
+            
+            val firstOrder = (database.taskDao().getMaxOrderInParent(parentId) ?: -1L) + 1L
+            val sortedSubtasks = subtasks.sortedBy { it.estimatedOrder ?: 0 }
+            
+            val createdTasks = sortedSubtasks.mapIndexed { index, draft ->
+                val subtask = Task(
+                    id = null,
+                    title = draft.title,
+                    content = draft.content,
+                    status = TaskStatus.OPEN,
+                    priority = draft.priority,
+                    parentId = parentId,
+                    dueAt = draft.dueAt,
+                    createdAt = now,
+                    updatedAt = now,
+                    orderInParent = firstOrder + index.toLong()
+                )
+                val rowId = database.taskDao().insert(subtask.toEntity())
+                subtask.copy(id = rowId)
+            }
+
+            Log.d("TodoRepository", "Added ${createdTasks.size} detailed subtasks under parent=$parentId")
+            createdTasks
+        }
+    }
+
     suspend fun insertTaskAt(
         title: String,
         parentId: Long? = null,
@@ -234,7 +241,7 @@ class TodoRepository(
         status: TaskStatus = TaskStatus.OPEN
     ): Result<Long> = dbWrite("insert task at position $order: $title") {
         val now = Clock.System.now()
-        database.taskDao().bulkShiftOrders(parentId, order, 1L)
+        database.taskDao().bulkShiftOrders(parentId, order, 1L, now.toEpochMilliseconds())
 
         val newTask = Task(
             id = null,
@@ -263,13 +270,13 @@ class TodoRepository(
         val targetTask = database.taskDao().getTaskById(targetId)
             ?: throw IllegalArgumentException("Target task not found: $targetId")
 
+        val now = Clock.System.now()
         val shiftedRows = database.taskDao().bulkShiftOrders(
             parentId = targetTask.parentId,
             fromInclusive = targetTask.orderInParent,
-            delta = 1L
+            delta = 1L,
+            updatedAt = now.toEpochMilliseconds()
         )
-
-        val now = Clock.System.now()
         val newTask = Task(
             id = null,
             title = title,
@@ -367,7 +374,7 @@ class TodoRepository(
 
         val rowsDeleted = database.taskDao().deleteById(id)
         if (rowsDeleted > 0) {
-            database.taskOrderOpsDao().reindexParent(parentId)
+            database.taskOrderOpsDao().reindexParent(parentId, Clock.System.now().toEpochMilliseconds())
             Log.d("TodoRepository", "Deleted task: $id and reindexed siblings of parent=$parentId")
             true
         } else {
@@ -382,7 +389,7 @@ class TodoRepository(
         val totalDeleted = database.taskDao().deleteTaskRecursively(id)
 
         if (totalDeleted > 0) {
-            database.taskOrderOpsDao().reindexParent(parentId)
+            database.taskOrderOpsDao().reindexParent(parentId, Clock.System.now().toEpochMilliseconds())
             Log.d("TodoRepository", "Recursively deleted $totalDeleted tasks starting from: $id and reindexed siblings of parent=$parentId")
         } else {
             Log.w("TodoRepository", "Task not found for recursive deletion: $id")
@@ -398,7 +405,7 @@ class TodoRepository(
                 return@dbWrite false
             }
 
-            database.taskDao().reorderWithinParent(task.parentId, taskId, newOrder)
+            database.taskDao().reorderWithinParent(task.parentId, taskId, newOrder, Clock.System.now().toEpochMilliseconds())
             Log.d("TodoRepository", "Reordered task $taskId within parent ${task.parentId} to $newOrder")
             true
         }
@@ -411,31 +418,12 @@ class TodoRepository(
                 return@dbWrite false
             }
 
-            database.taskOrderOpsDao().moveToParent(taskId, newParentId, newIndex)
+            database.taskOrderOpsDao().moveToParent(taskId, newParentId, newIndex, Clock.System.now().toEpochMilliseconds())
             Log.d("TodoRepository", "Moved task $taskId to parent=$newParentId at index=${newIndex ?: "end"}")
             true
         }
 
-    fun getChildrenFromFlow(parentId: Long): List<Task> {
-        return _tasksStateFlow.value.filter { it.parentId == parentId }
-    }
 
-    suspend fun getChildrenFromDb(parentId: Long?): List<Task> {
-        return try {
-            withContext(Dispatchers.IO) {
-                database.taskDao().getSiblings(parentId).toDomain()
-            }
-        } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to get children from DB for parent=$parentId", e)
-            emptyList()
-        }
-    }
-
-    fun getParentProgressFromFlow(parentId: Long): Pair<Int, Int> {
-        val children = getChildrenFromFlow(parentId)
-        val doneCount = children.count { it.status == TaskStatus.DONE }
-        return doneCount to children.size
-    }
 
     private fun logRowsUpdated(successMessage: String, missingMessage: String, rowsUpdated: Int): Boolean {
         return if (rowsUpdated > 0) {
@@ -513,4 +501,12 @@ class TodoRepository(
 data class TaskTreeInsertResult(
     val parentId: Long,
     val subtaskIds: List<Long>
+)
+
+data class SubtaskDraft(
+    val title: String,
+    val content: String? = null,
+    val priority: Priority = Priority.DEFAULT,
+    val dueAt: Instant? = null,
+    val estimatedOrder: Int? = null
 )

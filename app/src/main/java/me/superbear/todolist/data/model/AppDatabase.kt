@@ -3,6 +3,8 @@ package me.superbear.todolist.data.model
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import me.superbear.todolist.domain.entities.LongTermMemory
 import me.superbear.todolist.data.dao.LongTermMemoryDao
 import me.superbear.todolist.data.converters.InstantConverter
@@ -16,25 +18,48 @@ import me.superbear.todolist.data.converters.InstantConverter
  * Database configuration:
  * - entities: [TaskEntity] - defines the tables in the database
  * - views: [UnfinishedTasksView] - SQLite VIEWs for common filtering operations
- * - version: 3 - database schema version for migrations
+ * - version: 5 - database schema version for migrations
  * - exportSchema: false - disables schema export (no schema location configured)
- * 
+ *
  * Views included:
  * - unfinished_tasks: Pre-filtered view of tasks with OPEN status for performance
- * 
+ *
  * Usage:
  * - Extend RoomDatabase to leverage Room's code generation
  * - Provide abstract methods for each DAO
  * - Room generates the implementation automatically
  */
 @Database(
-    entities = [TaskEntity::class, LongTermMemory::class], 
+    entities = [TaskEntity::class, LongTermMemory::class],
     views = [UnfinishedTasksView::class],
-    version = 4, 
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(InstantConverter::class)
 abstract class AppDatabase : RoomDatabase() {
+    companion object {
+        /**
+         * Adds `tasks.uuid` — a globally unique, stable identity independent of the local
+         * autoincrement `id`, laid down for a future sync backend. Existing rows are backfilled
+         * in place rather than relying on destructive fallback, so upgrading does not lose data.
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN uuid TEXT NOT NULL DEFAULT ''")
+                db.query("SELECT id FROM tasks").use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow("id")
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idIndex)
+                        db.execSQL(
+                            "UPDATE tasks SET uuid = ? WHERE id = ?",
+                            arrayOf<Any>(java.util.UUID.randomUUID().toString(), id)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Provides access to task-related database operations.
      * 

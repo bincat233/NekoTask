@@ -109,9 +109,13 @@ class TaskListCoordinator(
         }
     }
 
-    fun getChildren(parentId: Long): List<Task> = todoRepository.getChildrenFromFlow(parentId)
+    fun getChildren(parentId: Long): List<Task> = _taskState.value.items.filter { it.parentId == parentId }
 
-    fun getParentProgress(parentId: Long): Pair<Int, Int> = todoRepository.getParentProgressFromFlow(parentId)
+    fun getParentProgress(parentId: Long): Pair<Int, Int> {
+        val children = getChildren(parentId)
+        val doneCount = children.count { it.status == TaskStatus.DONE }
+        return doneCount to children.size
+    }
 
     fun findTask(id: Long): Task? = _taskState.value.items.find { it.id == id }
 
