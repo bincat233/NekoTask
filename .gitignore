@@ -14,5 +14,8 @@
 .cxx
 local.properties
 /.idea/appInsightsSettings.xml
+/.idea/planningMode.xml
 /app/release/
 /.kotlin
+hs_err_pid*.log
+replay_pid*.log
