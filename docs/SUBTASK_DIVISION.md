@@ -24,7 +24,7 @@ TaskDetailSheet action
 - `maxSubtasks`
 - `useAI`
 
-这些值随事件传入 `SubtaskDivisionCoordinator`。Coordinator 会从共享 `ChatAgent` 读取当前 `PromptExecutor` 和 `LLModel`，因此 Settings 中的 provider/model/key 变更会影响后续子任务拆分。
+这些值随事件传入 `SubtaskDivisionCoordinator`。Coordinator 会从共享 `LlmRuntime` 读取当前 `PromptExecutor` 和 `LLModel`，因此 Settings 中的 provider/model/key 变更会影响后续子任务拆分。
 
 ## 核心组件
 
@@ -41,18 +41,17 @@ TaskDetailSheet action
 - `useAI = true` 时使用 `AISubtaskDivider`；`useAI = false` 时使用 `MockSubtaskDivider`。
 - `CreateFromSuggestions` 当前会 `forceCreate = true`，即生成后直接写入数据库。
 - 创建子任务使用 `TodoRepository.addTask(...)`，实际顺序由 Room ordering 逻辑追加计算。
+- `TodoRepository.addTask(...)` 返回数据库生成的真实 id，`createdTasks` 会带上这些 id。
 - UI 通过 Room Flow 自动刷新；拆分结果本身目前不作为独立 UI 状态展示。
 
 ## 已知限制
 
 - `GenerateSuggestions` 只写日志，不显示建议确认 UI。
-- `SubtaskDivisionService.createSubtasksFromSuggestions` 返回的 `createdTasks` 是临时 domain 对象，不包含数据库生成的真实 id。
-- `TodoRepository.addTask` 是 fire-and-forget；拆分服务无法严格等待每个子任务写入完成。
 - 依赖关系字段会保存在响应模型里，但当前创建任务时不会持久化依赖关系。
 
 ## 维护建议
 
 - 若要做“生成建议 -> 用户确认 -> 创建”，先给 `SubtaskDivisionCoordinator` 增加专门 state，而不是把建议塞进 `TaskDetailState` 的零散字段。
-- 若 UI 需要展示真实创建结果，先把 `TodoRepository.addTask` 改为 `suspend` 并返回插入 id。
-- 若新增 provider 或模型配置，确认 `ChatAgent.buildExecutor()` 和 `getCurrentModel()` 对子任务拆分仍可用。
-- 不要重新引入旧 `assistantClient` 构造方式；当前 AI runtime 统一走 `ChatAgent`。
+- 若 UI 需要展示建议确认流程，先定义 `SubtaskDivisionCoordinator` 的状态和事件，不要让 `TaskDetailSheet` 直接持有拆分业务状态。
+- 若新增 provider 或模型配置，确认 `LlmRuntime.buildExecutor()` 和 `getCurrentModel()` 对子任务拆分仍可用。
+- 不要重新引入旧 `assistantClient` 构造方式；当前 AI runtime 统一走 `ChatAgent` / `LlmRuntime` seams。

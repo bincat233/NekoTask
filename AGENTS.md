@@ -45,6 +45,7 @@ This file is the agent/developer maintenance guide. It records **how / guardrail
 - Domain model: `Task` uses `kotlinx.datetime.Instant`; Room stores times as epoch milliseconds through `InstantConverter`.
 - `TodoRepository.tasks` is the Room Flow; `tasksStateFlow` is a legacy bridge and is still used for UI-friendly snapshot queries.
 - Task write APIs are `suspend` and return explicit `Result` values. Keep coroutine ownership in callers/coordinators instead of adding new fire-and-forget writes inside the repository.
+- Completing a parent task cascades `DONE` to all descendants in one repository transaction; reopening a parent does not recursively reopen children.
 
 ## AI Layer
 
@@ -53,6 +54,7 @@ This file is the agent/developer maintenance guide. It records **how / guardrail
 - Providers: OpenAI and DeepSeek, selected through Settings by provider/model/key.
 - Executor: `TodoAgent.buildExecutor()` returns `MultiLLMPromptExecutor`; OpenAI-compatible clients use `KtorKoogHttpClient` to adapt Ktor into Koog.
 - Tools: `TaskToolSet` exposes task create/update/delete/complete tools; `MemoryToolSet` exposes long-term memory add/update/delete/list tools.
+- Checklist/planning requests with multiple actionable items should use `TaskToolSet.add_task_with_subtasks` for a new parent task, or `TaskToolSet.add_subtasks` for an existing parent. Do not encode multi-item checklists as numbered text in task `content`.
 - Prompt context: chat injects `CURRENT_TODO_STATE` plus optional `MEMORY CONTEXT`, and uses `Locale.getDefault().language` to request Chinese or English replies.
 - `ChatAgent` is the chat-only seam. `LlmRuntime` is the provider/model/executor seam used by Settings and subtask division.
 - Guardrail: do not restore the old strict JSON action client. Current action execution is Koog tool calling.
@@ -85,6 +87,7 @@ OPENAI_API_KEY=...
 - New task write paths must account for `orderInParent` and sibling reindexing. Do not insert bare tasks without considering order.
 - Coordinator task-write failures should use the shared `ui.main.sections.logFailure` helper instead of repeating local `Log.e` blocks.
 - When deleting a parent task, prefer the recursive deletion path to avoid orphaned subtasks.
+- Keep task tree status rules in `TodoRepository`, not individual UI coordinators, so AI tools and manual UI interactions stay consistent.
 - Changes involving Settings provider/model/key should also check `TodoAgent`, `LlmRuntime`, and `SubtaskDivisionCoordinator`, because subtask division reuses the current AI runtime.
 - Do not turn debug sample reset into "wipe on every install"; data should be cleared only by explicit developer action, app data clearing, or uninstall.
 - Do not use README's historical roadmap to decide whether a feature exists. Confirm with `rg` and code.
@@ -127,4 +130,3 @@ When capturing screenshots or performing UI automation on a physical device:
   - To bypass this, send a `66` (KEYCODE_ENTER) keyevent right after `input text` to commit the characters.
   - Alternatively, temporarily switch to a basic English IME using `adb shell ime set`.
 - **Jetpack Compose Frame Settling**: Ensure the screen has fully updated and the keyboard has finished dismissing before taking screen captures to avoid blurred overlay animations or open soft keyboards.
-

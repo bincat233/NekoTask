@@ -39,6 +39,12 @@ import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ui.common.chat.ChatInputBar
 import me.superbear.todolist.domain.entities.MessageStatus
 import me.superbear.todolist.domain.entities.Sender
+import me.superbear.todolist.ui.main.sections.appShell.AppShellBackAction
+import me.superbear.todolist.ui.main.sections.appShell.AppMode
+import me.superbear.todolist.ui.main.sections.appShell.AppPage
+import me.superbear.todolist.ui.main.sections.appShell.AppShellEvent
+import me.superbear.todolist.ui.main.sections.appShell.resolveBackAction
+import me.superbear.todolist.ui.main.sections.appShell.resolveAppMode
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayMode
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlaySection
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerSection
@@ -47,42 +53,12 @@ import me.superbear.todolist.ui.main.detail.TaskDetailSheet
 import me.superbear.todolist.ui.main.sections.tasks.TaskSection
 import me.superbear.todolist.ui.main.sections.tasks.TaskEvent as TaskSectionEvent
 import me.superbear.todolist.ui.main.state.AppEvent
-import me.superbear.todolist.ui.main.state.TaskDetailEvent
-import me.superbear.todolist.ui.main.state.SubtaskDivisionEvent
-import me.superbear.todolist.ui.main.state.LongTermMemoryEvent
+import me.superbear.todolist.ui.main.sections.taskDetail.TaskDetailEvent
+import me.superbear.todolist.ui.main.sections.subtaskDivision.SubtaskDivisionEvent
+import me.superbear.todolist.ui.main.sections.longTermMemory.LongTermMemoryEvent
 import me.superbear.todolist.ui.settings.ProviderDisplayInfo
 import me.superbear.todolist.ui.settings.SettingsScreen
 import me.superbear.todolist.ui.settings.SettingsState
-
-// Page navigation states
-sealed class AppPage {
-    object TaskList : AppPage()    // Main task list page
-    object Settings : AppPage()    // Settings page
-}
-
-// Main app modes - replaces scattered boolean states
-sealed class AppMode {
-    // 常规模式：任务列表 + 底部聊天输入（顶部“窥视”消息）
-    object Normal : AppMode()           // Normal task list view with peek chat
-    // 手动添加任务模式：浮层表单 + 遮罩
-    object ManualAdd : AppMode()        // Manual task addition mode
-    // 聊天全屏模式：主内容模糊，显示全屏聊天
-    object ChatFullscreen : AppMode()   // Fullscreen chat mode
-}
-
-// Helper function to determine current app mode
-@Composable
-private fun getCurrentAppMode(
-    manualAddOpen: Boolean,
-    chatOverlayMode: String
-): AppMode {
-    return when {
-        // 优先级：手动添加 > 聊天全屏 > 常规
-        manualAddOpen -> AppMode.ManualAdd
-        chatOverlayMode == "fullscreen" -> AppMode.ChatFullscreen
-        else -> AppMode.Normal
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,23 +81,27 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     
     // 页面导航状态
-    var currentPage by remember { mutableStateOf<AppPage>(AppPage.TaskList) }
+    val currentPage = state.appShellState.currentPage
     
     // 计算当前模式（简化多处布尔状态判断）
-    val currentMode = getCurrentAppMode(state.manualAddState.isOpen, state.chatOverlayState.chatOverlayMode)
+    val currentMode = resolveAppMode(state.manualAddState.isOpen, state.chatOverlayState.chatOverlayMode)
+    val backAction = resolveBackAction(currentPage, currentMode, state.taskDetailState.isVisible)
 
     // 物理返回键处理：在不同模式下拦截并派发相应事件
-    BackHandler(enabled = currentPage == AppPage.Settings) {
-        currentPage = AppPage.TaskList
-    }
-    BackHandler(enabled = currentMode == AppMode.ManualAdd) { 
-        onEvent(AppEvent.ManualAdd(me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Close))
-    }
-    BackHandler(enabled = currentMode == AppMode.ChatFullscreen) { 
-        onEvent(AppEvent.ChatOverlay(me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.SetChatOverlayMode("peek")))
-    }
-    BackHandler(enabled = state.taskDetailState.isVisible) {
-        onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
+    BackHandler(enabled = backAction != null) {
+        when (backAction) {
+            AppShellBackAction.HideTaskDetail -> onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
+            AppShellBackAction.CloseManualAdd -> onEvent(
+                AppEvent.ManualAdd(me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Close)
+            )
+            AppShellBackAction.ExitFullscreenChat -> onEvent(
+                AppEvent.ChatOverlay(me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.SetChatOverlayMode("peek"))
+            )
+            AppShellBackAction.NavigateToTaskList -> onEvent(
+                AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.TaskList))
+            )
+            null -> Unit
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -161,7 +141,7 @@ fun MainScreen(
                             scope.launch {
                                 drawerState.close()
                             }
-                            currentPage = AppPage.TaskList
+                            onEvent(AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.TaskList)))
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
@@ -186,7 +166,7 @@ fun MainScreen(
                             scope.launch {
                                 drawerState.close()
                             }
-                            currentPage = AppPage.Settings
+                            onEvent(AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.Settings)))
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
@@ -342,7 +322,7 @@ fun MainScreen(
                     // 设置页面
                     SettingsScreen(
                         onNavigateBack = {
-                            currentPage = AppPage.TaskList
+                            onEvent(AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.TaskList)))
                         },
                         settingsState = settingsState,
                         onSettingsChange = viewModel::updateSettings,

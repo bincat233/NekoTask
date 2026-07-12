@@ -108,6 +108,14 @@ interface TaskDao {
     suspend fun updateStatus(id: Long, status: TaskStatus, updatedAt: Long): Int
 
     /**
+     * Updates status for a known set of task IDs.
+     * Used by repository-level cascade rules where the repository first resolves the
+     * affected tree and then writes every changed row in the same Room transaction.
+     */
+    @Query("UPDATE tasks SET status = :status, updated_at = :updatedAt WHERE id IN (:ids)")
+    suspend fun updateStatusForIds(ids: List<Long>, status: TaskStatus, updatedAt: Long): Int
+
+    /**
      * Updates only the title and updatedAt fields of a task.
      * More efficient than updating the entire entity.
      * 

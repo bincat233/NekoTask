@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import me.superbear.todolist.assistant.FakeChatAgent
+import me.superbear.todolist.assistant.FakeLlmRuntime
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.data.repository.LongTermMemoryRepository
 import me.superbear.todolist.ui.main.MainScreen
@@ -39,7 +40,13 @@ class ChatWithFakeAgentTest {
         val longTermMemoryRepository =
             LongTermMemoryRepository(todoRepository.database.longTermMemoryDao())
         val fakeAgent = FakeChatAgent(reply = "Fake agent reply")
-        val viewModel = MainViewModel(application, todoRepository, longTermMemoryRepository, fakeAgent)
+        val viewModel = MainViewModel(
+            application,
+            todoRepository,
+            longTermMemoryRepository,
+            fakeAgent,
+            FakeLlmRuntime()
+        )
 
         composeTestRule.setContent {
             TodolistTheme {

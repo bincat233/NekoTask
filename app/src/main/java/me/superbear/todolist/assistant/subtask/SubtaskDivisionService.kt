@@ -102,17 +102,17 @@ class SubtaskDivisionService(
             val createdTasks = mutableListOf<Task>()
 
             suggestions.subtasks.sortedBy { it.estimatedOrder }.forEach { suggestion ->
-                todoRepository.addTask(
+                val rowId = todoRepository.addTask(
                     title = suggestion.title,
                     parentId = parentTask.id,
                     content = suggestion.content,
                     priority = suggestion.priority,
                     dueAt = null,
                     status = TaskStatus.OPEN
-                )
+                ).getOrThrow()
 
                 val tempTask = Task(
-                    id = null,
+                    id = rowId,
                     title = suggestion.title,
                     content = suggestion.content,
                     status = TaskStatus.OPEN,

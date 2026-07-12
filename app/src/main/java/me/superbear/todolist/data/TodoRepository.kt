@@ -3,40 +3,40 @@ package me.superbear.todolist.data
 import android.content.Context
 import android.util.Log
 import androidx.room.Room
+import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.data.model.AppDatabase
-import me.superbear.todolist.data.model.TaskEntity
 import me.superbear.todolist.data.model.toDomain
 import me.superbear.todolist.data.model.toEntity
+import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
-import me.superbear.todolist.domain.entities.Priority
 
 /**
- * Repository for handling Task data operations.
- * 
- * This class now uses Room database as the single source of truth (SSOT),
- * with automatic seeding from JSON assets on first launch.
- * Provides reactive Flow-based data access for UI components.
+ * Repository for task data operations.
+ *
+ * Room is the source of truth. Write operations are suspend functions with explicit
+ * [Result] values so callers can wait for success/failure instead of relying on
+ * fire-and-forget repository jobs.
  */
 class TodoRepository(
     private val context: Context,
     private val seedManager: SeedManager? = null
 ) {
 
-    // Room database instance, initialized lazily
     internal val database: AppDatabase by lazy {
         val builder = Room.databaseBuilder(
             context.applicationContext,
@@ -44,50 +44,31 @@ class TodoRepository(
             "todolist_database"
         )
         if (BuildConfig.DEBUG) {
-            // Safer for development; consider explicit migrations for release builds
-            // false = drop only Room-managed tables (matches previous default behavior)
+            // Safer for development; consider explicit migrations for release builds.
             builder.fallbackToDestructiveMigration(false)
         }
         builder.build()
     }
 
-    /**
-     * Fetch a single task by id from the database (fresh read).
-     */
-    suspend fun getTaskById(id: Long): Task? {
-        return try {
-            database.taskDao().getTaskById(id)?.toDomain()
-        } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to get task by id: $id", e)
-            null
-        }
-    }
-
-    // Repository scope for background operations
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // Room Flow as the single source of truth
     val tasks: Flow<List<Task>> = database.taskDao().observeAll().map { entities ->
         entities.toDomain()
     }
 
-    // Legacy StateFlow bridge (kept for compatibility, but Room Flow is preferred)
     private val _tasksStateFlow = MutableStateFlow<List<Task>>(emptyList())
     val tasksStateFlow: StateFlow<List<Task>> = _tasksStateFlow.asStateFlow()
 
     init {
-        // IMPORTANT: Delete database BEFORE lazy initialization if flag is set
-        if (BuildConfig.DEBUG && false) { // Temporarily disabled
+        // IMPORTANT: Delete database before lazy initialization if this is ever re-enabled.
+        if (BuildConfig.DEBUG && false) {
             Log.w("TodoRepository", "FORCE_DELETE_DB is true, deleting database.")
             context.deleteDatabase("todolist_database")
-            // Also reset the seeding flag so database will be re-seeded
             seedManager?.resetSeedingFlagForTesting()
         }
 
-        // Initialize database and perform seeding if needed (debug-only, opt-in via seedManager)
         initializeDatabase()
 
-        // Bridge Room Flow to StateFlow for legacy compatibility
         repositoryScope.launch {
             tasks.collect { taskList ->
                 _tasksStateFlow.value = taskList
@@ -95,21 +76,28 @@ class TodoRepository(
         }
     }
 
-    /**
-     * Seed the database with sample data if a [seedManager] was supplied and it's needed.
-     * Production wiring only supplies a [SeedManager] for debug builds; release builds and
-     * tests that don't pass one get no seeding at all.
-     */
+    private suspend fun <T> dbWrite(description: String, block: suspend () -> T): Result<T> =
+        withContext(Dispatchers.IO) {
+            try {
+                Result.success(block())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("TodoRepository", "Failed to $description", e)
+                Result.failure(e)
+            }
+        }
+
     private fun initializeDatabase() {
         val seeder = seedManager ?: return
         repositoryScope.launch {
             try {
                 if (seeder.needsSeeding(database)) {
-                    Log.d("TodoRepository", "Database empty, seeding with built-in sample data (bypassing JSON)...")
+                    Log.d("TodoRepository", "Database empty, seeding with built-in sample data.")
                     seeder.seedWithSampleData(database)
-                    Log.d("TodoRepository", "Database sample seeding completed successfully")
+                    Log.d("TodoRepository", "Database sample seeding completed successfully.")
                 } else {
-                    Log.d("TodoRepository", "Database already seeded, skipping")
+                    Log.d("TodoRepository", "Database already seeded, skipping.")
                 }
             } catch (e: Exception) {
                 Log.e("TodoRepository", "Failed to initialize database", e)
@@ -117,349 +105,126 @@ class TodoRepository(
         }
     }
 
-    /**
-     * Wipes all tasks and re-seeds sample data. No-op if no [seedManager] was supplied
-     * (release builds, tests) — backs the debug-only "reset sample data" developer setting.
-     */
     suspend fun resetSampleData() {
         val seeder = seedManager ?: return
         seeder.resetAndReseed(database)
     }
 
-    /**
-     * Update a task with new field values.
-     * Preserves existing fields if not specified in the update.
-     * 
-     * @param id Task ID to update
-     * @param title New title (optional)
-     * @param content New content/notes (optional)
-     * @param priority New priority (optional)
-     * @param dueAt New due date (optional)
-     */
-    fun updateTask(
-        id: Long,
-        title: String? = null,
-        content: String? = null,
-        priority: Priority? = null,
-        dueAt: Instant? = null
-    ) {
-        repositoryScope.launch {
-            try {
-                // Fetch fresh from DB to avoid stale UI state
-                val currentTask = getTaskById(id)
-                if (currentTask != null) {
-                    val updatedTask = currentTask.copy(
-                        title = title ?: currentTask.title,
-                        content = content ?: currentTask.content,
-                        priority = priority ?: currentTask.priority,
-                        dueAt = dueAt ?: currentTask.dueAt,
-                        updatedAt = Clock.System.now()
-                    )
-                    
-                    val rowsUpdated = database.taskDao().update(updatedTask.toEntity())
-                    if (rowsUpdated > 0) {
-                        Log.d("TodoRepository", "Updated task: $id")
-                    } else {
-                        Log.w("TodoRepository", "Task not found for update: $id")
-                    }
-                } else {
-                    Log.w("TodoRepository", "Task not found in StateFlow for update: $id")
-                }
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to update task: $id", e)
-            }
-        }
-    }
-
-    /**
-     * Delete a task by its ID.
-     * 
-     * @param id Task ID to delete
-     */
-    fun deleteTask(id: Long) {
-        repositoryScope.launch {
-            try {
-                // Fetch parent info first for reindex
-                val task = database.taskDao().getTaskById(id)
-                val parentId = task?.parentId
-
-                val rowsDeleted = database.taskDao().deleteById(id)
-                if (rowsDeleted > 0) {
-                    // Reindex remaining siblings to keep 0..n-1
-                    try {
-                        database.taskOrderOpsDao().reindexParent(parentId)
-                    } catch (e: Exception) {
-                        Log.e("TodoRepository", "Failed to reindex after delete for parent=$parentId", e)
-                    }
-                    Log.d("TodoRepository", "Deleted task: $id and reindexed siblings of parent=$parentId")
-                } else {
-                    Log.w("TodoRepository", "Task not found for deletion: $id")
-                }
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to delete task: $id", e)
-            }
-        }
-    }
-
-    /**
-     * Recursively delete a task and all its subtasks.
-     * This method ensures that all child tasks are deleted before the parent task.
-     * 
-     * @param id Task ID to delete recursively
-     */
-    fun deleteTaskRecursively(id: Long) {
-        repositoryScope.launch {
-            try {
-                // Fetch parent info first for reindex
-                val task = database.taskDao().getTaskById(id)
-                val parentId = task?.parentId
-
-                // Use the DAO's recursive deletion method
-                val totalDeleted = database.taskDao().deleteTaskRecursively(id)
-                
-                if (totalDeleted > 0) {
-                    // Reindex remaining siblings to keep 0..n-1
-                    try {
-                        database.taskOrderOpsDao().reindexParent(parentId)
-                    } catch (e: Exception) {
-                        Log.e("TodoRepository", "Failed to reindex after recursive delete for parent=$parentId", e)
-                    }
-                    Log.d("TodoRepository", "Recursively deleted $totalDeleted tasks starting from: $id and reindexed siblings of parent=$parentId")
-                } else {
-                    Log.w("TodoRepository", "Task not found for recursive deletion: $id")
-                }
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to recursively delete task: $id", e)
-            }
-        }
-    }
-
-    // Order maintenance operations (internal API)
-
-    /**
-     * Adds a new task before a target task with proper order management.
-     * Uses transaction to ensure atomic order shifting and insertion.
-     * 
-     * @param targetId ID of the task to insert before
-     * @param title Title of the new task
-     * @param content Optional content for the new task
-     * @param priority Priority of the new task
-     */
-    fun addTaskBefore(
-        targetId: Long, 
-        title: String, 
-        content: String? = null,
-        priority: Priority = Priority.DEFAULT
-    ) {
-        repositoryScope.launch {
-            try {
-                // Step 1: Get target task info
-                val targetTask = database.taskDao().getTaskById(targetId)
-                if (targetTask == null) {
-                    Log.w("TodoRepository", "Target task not found for addTaskBefore: $targetId")
-                    return@launch
-                }
-
-                // Step 2: Shift existing tasks to make space
-                val shiftedRows = database.taskDao().bulkShiftOrders(
-                    parentId = targetTask.parentId,
-                    fromInclusive = targetTask.orderInParent,
-                    delta = 1L
-                )
-
-                // Step 3: Insert new task at target's original position
-                val now = Clock.System.now()
-
-                val newTask = Task(
-                    id = null,
-                    title = title,
-                    content = content,
-                    status = TaskStatus.OPEN,
-                    priority = priority,
-                    parentId = targetTask.parentId,
-                    createdAt = now,
-                    updatedAt = now,
-                    orderInParent = targetTask.orderInParent
-                )
-
-                val rowId = database.taskDao().insert(newTask.toEntity())
-                Log.d("TodoRepository", "Added task before $targetId: $title (shifted $shiftedRows tasks, rowId: $rowId)")
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to add task before $targetId: $title", e)
-            }
-        }
-    }
-
-    /**
-     * Reorders a task to a new position within its parent.
-     * Handles sibling reindexing if necessary to maintain consecutive ordering.
-     * 
-     * @param taskId ID of the task to reorder
-     * @param newOrder New order position (0-based)
-     */
-    fun reorder(taskId: Long, newOrder: Long) {
-        repositoryScope.launch {
-            try {
-                // Fetch parentId first to target the correct sibling scope
-                val task = database.taskDao().getTaskById(taskId)
-                if (task == null) {
-                    Log.w("TodoRepository", "Task not found for reorder: $taskId")
-                    return@launch
-                }
-
-                database.taskDao().reorderWithinParent(task.parentId, taskId, newOrder)
-                Log.d("TodoRepository", "Reordered task $taskId within parent ${task.parentId} to $newOrder (atomic)")
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to reorder task $taskId to $newOrder", e)
-            }
-        }
-    }
-
-    /**
-     * Move a task to a new parent, optionally to a specific index, atomically.
-     * If newIndex is null, it will be appended to the end of the new parent.
-     */
-    fun moveTaskToParent(taskId: Long, newParentId: Long?, newIndex: Long? = null) {
-        repositoryScope.launch {
-            try {
-                database.taskOrderOpsDao().moveToParent(taskId, newParentId, newIndex)
-                Log.d("TodoRepository", "Moved task $taskId to parent=$newParentId at index=${newIndex ?: "end"}")
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to move task $taskId to parent=$newParentId at index=$newIndex", e)
-            }
-        }
-    }
-
-    /**
-     * Reindexes all siblings within a parent to have consecutive order values.
-     * Useful for cleaning up gaps after deletions or bulk operations.
-     * 
-     * @param parentId Parent task ID (null for root-level tasks)
-     */
-    private suspend fun reindexSiblings(parentId: Long?) {
-        try {
-            val siblings = database.taskDao().getSiblings(parentId)
-            val sortedSiblings = siblings.sortedWith(
-                compareBy<TaskEntity> { it.orderInParent }.thenBy { it.createdAt }
-            )
-
-            sortedSiblings.forEachIndexed { index, sibling ->
-                if (sibling.orderInParent != index.toLong()) {
-                    database.taskDao().updateOrder(sibling.id, index.toLong(), parentId)
-                }
-            }
-
-            Log.d("TodoRepository", "Reindexed ${sortedSiblings.size} siblings for parent $parentId")
-        } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to reindex siblings for parent $parentId", e)
-        }
-    }
-
-    // Legacy JSON loading method removed - now handled by SeedManager
-    // This functionality has been moved to SeedManager.seedFromAssets()
-
-    /**
-     * Simulates an API call to update a Task on a server.
-     * In a real application, this function would make an actual network request.
-     * @param item The Task to be updated.
-     * @return Boolean indicating whether the simulated update was successful.
-     */
-    suspend fun updateTaskOnServer(item: Task): Boolean {
-        // Simulate network delay to mimic a real API call.
-        delay(500) // 0.5 second delay
-
-        // Log the simulated action.
-        // In a real app, you would have network request code here (e.g., using Retrofit or Ktor).
-        Log.d("TodoRepository", "Simulating update for item: ${item.id}, title: '${item.title}', status: ${item.status} on server.")
-
-        // For now, always simulate success.
-        return true
-    }
-
-    /**
-     * Get all child tasks for a given parent task ID (UI-friendly, in-memory snapshot).
-     */
-    fun getChildrenFromFlow(parentId: Long): List<Task> {
-        return _tasksStateFlow.value.filter { it.parentId == parentId }
-    }
-
-    /**
-     * DB-backed fetch of children for a given parent (null = top-level).
-     * Prefer this for correctness in non-UI paths.
-     */
-    suspend fun getChildrenFromDb(parentId: Long?): List<Task> {
+    suspend fun getTaskById(id: Long): Task? {
         return try {
-            database.taskDao().getSiblings(parentId).toDomain()
+            withContext(Dispatchers.IO) {
+                database.taskDao().getTaskById(id)?.toDomain()
+            }
         } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to get children from DB for parent=$parentId", e)
-            emptyList()
+            Log.e("TodoRepository", "Failed to get task by id: $id", e)
+            null
         }
     }
 
-
-    /**
-     * Get progress information (done count, total count) for a parent task
-     */
-    fun getParentProgressFromFlow(parentId: Long): Pair<Int, Int> {
-        val children = getChildrenFromFlow(parentId)
-        val doneCount = children.count { it.status == TaskStatus.DONE }
-        return Pair(doneCount, children.size)
-    }
-
-    /**
-     * Add a new task (parent or child) to the database.
-     * Uses Room's addTaskWithOrdering for atomic order computation.
-     * 
-     * @param title The title of the new task
-     * @param parentId Optional parent ID for creating subtasks
-     */
-    fun addTask(
+    suspend fun addTask(
         title: String,
         parentId: Long? = null,
         content: String? = null,
         priority: Priority = Priority.DEFAULT,
         dueAt: Instant? = null,
         status: TaskStatus = TaskStatus.OPEN
-    ) {
-        repositoryScope.launch {
-            try {
-                val now = Clock.System.now()
+    ): Result<Long> = dbWrite("add task: $title") {
+        val now = Clock.System.now()
+        val newTask = Task(
+            id = null,
+            title = title,
+            content = content,
+            status = status,
+            priority = priority,
+            parentId = parentId,
+            dueAt = dueAt,
+            createdAt = now,
+            updatedAt = now,
+            orderInParent = 0
+        )
 
-                val newTask = Task(
-                    id = null,
-                    title = title,
-                    content = content,
-                    status = status,
-                    priority = priority,
-                    parentId = parentId,
-                    dueAt = dueAt,
-                    createdAt = now,
-                    updatedAt = now,
-                    orderInParent = 0 // Will be computed by addTaskWithOrdering
-                )
-                
-                // Use Room's transaction-based ordering method
-                val rowId = database.taskDao().addTaskWithOrdering(newTask.toEntity())
-                Log.d("TodoRepository", "Added new task: $title (rowId: $rowId)")
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to add task: $title", e)
-            }
+        val rowId = database.taskDao().addTaskWithOrdering(newTask.toEntity())
+        Log.d("TodoRepository", "Added new task: $title (rowId: $rowId)")
+        rowId
+    }
+
+    /**
+     * Atomic AI-tool operation for checklist-like requests.
+     *
+     * A request such as "make a 20 item packing list" should produce one parent task with
+     * checkable child tasks, not a numbered blob in [Task.content]. Keeping this as a
+     * repository primitive avoids partial task trees if any child insert fails.
+     */
+    suspend fun addTaskWithSubtasks(
+        title: String,
+        subtaskTitles: List<String>,
+        content: String? = null,
+        priority: Priority = Priority.DEFAULT,
+        dueAt: Instant? = null
+    ): Result<TaskTreeInsertResult> = dbWrite("add task with ${subtaskTitles.size} subtasks: $title") {
+        require(title.isNotBlank()) { "Parent task title must not be blank" }
+
+        val cleanedSubtaskTitles = cleanSubtaskTitles(subtaskTitles)
+        require(cleanedSubtaskTitles.isNotEmpty()) { "At least one subtask title is required" }
+
+        database.withTransaction {
+            val now = Clock.System.now()
+            val parentOrder = (database.taskDao().getMaxOrderInParent(parentId = null) ?: -1L) + 1L
+            val parentTask = Task(
+                id = null,
+                title = title.trim(),
+                content = content?.trim()?.takeIf { it.isNotBlank() },
+                status = TaskStatus.OPEN,
+                priority = priority,
+                parentId = null,
+                dueAt = dueAt,
+                createdAt = now,
+                updatedAt = now,
+                orderInParent = parentOrder
+            )
+
+            val parentId = database.taskDao().insert(parentTask.toEntity())
+            val subtaskIds = insertSubtasks(parentId, cleanedSubtaskTitles, priority, dueAt, now)
+
+            Log.d(
+                "TodoRepository",
+                "Added task tree: $title (parentId: $parentId, subtasks: ${subtaskIds.size})"
+            )
+            TaskTreeInsertResult(parentId = parentId, subtaskIds = subtaskIds)
         }
     }
 
     /**
-     * Insert a task at a specific position within its parent.
-     * Shifts existing tasks at the position and below down by one.
-     * 
-     * @param title The title of the new task
-     * @param parentId Parent ID for creating subtasks
-     * @param order The position to insert at (0-based)
-     * @param content Optional content for the new task
-     * @param priority Priority of the new task
-     * @param dueAt Optional due date
-     * @param status Status of the new task
+     * Atomic AI-tool operation for adding many checkable children to an existing task.
+     * This prevents the model from burning one tool-call iteration per item.
      */
-    fun insertTaskAt(
+    suspend fun addSubtasks(
+        parentId: Long,
+        subtaskTitles: List<String>,
+        priority: Priority? = null,
+        dueAt: Instant? = null
+    ): Result<TaskTreeInsertResult> = dbWrite("add ${subtaskTitles.size} subtasks under $parentId") {
+        val cleanedSubtaskTitles = cleanSubtaskTitles(subtaskTitles)
+        require(cleanedSubtaskTitles.isNotEmpty()) { "At least one subtask title is required" }
+
+        database.withTransaction {
+            val parent = database.taskDao().getTaskById(parentId)?.toDomain()
+                ?: throw IllegalArgumentException("Parent task not found: $parentId")
+            val now = Clock.System.now()
+            val subtaskIds = insertSubtasks(
+                parentId = parentId,
+                subtaskTitles = cleanedSubtaskTitles,
+                priority = priority ?: parent.priority,
+                dueAt = dueAt ?: parent.dueAt,
+                now = now
+            )
+
+            Log.d("TodoRepository", "Added ${subtaskIds.size} subtasks under parent=$parentId")
+            TaskTreeInsertResult(parentId = parentId, subtaskIds = subtaskIds)
+        }
+    }
+
+    suspend fun insertTaskAt(
         title: String,
         parentId: Long? = null,
         order: Long,
@@ -467,166 +232,285 @@ class TodoRepository(
         priority: Priority = Priority.DEFAULT,
         dueAt: Instant? = null,
         status: TaskStatus = TaskStatus.OPEN
-    ) {
-        repositoryScope.launch {
-            try {
-                val now = Clock.System.now()
-                
-                // First, shift existing tasks at the position and below down by one
-                database.taskDao().bulkShiftOrders(parentId, order, 1L)
-                
-                val newTask = Task(
-                    id = null,
-                    title = title,
-                    content = content,
-                    status = status,
-                    priority = priority,
-                    parentId = parentId,
-                    dueAt = dueAt,
-                    createdAt = now,
-                    updatedAt = now,
-                    orderInParent = order
-                )
-                
-                // Insert the new task at the specified position
-                val rowId = database.taskDao().insert(newTask.toEntity())
-                Log.d("TodoRepository", "Inserted task at position $order: $title (rowId: $rowId)")
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to insert task at position $order: $title", e)
-            }
+    ): Result<Long> = dbWrite("insert task at position $order: $title") {
+        val now = Clock.System.now()
+        database.taskDao().bulkShiftOrders(parentId, order, 1L)
+
+        val newTask = Task(
+            id = null,
+            title = title,
+            content = content,
+            status = status,
+            priority = priority,
+            parentId = parentId,
+            dueAt = dueAt,
+            createdAt = now,
+            updatedAt = now,
+            orderInParent = order
+        )
+
+        val rowId = database.taskDao().insert(newTask.toEntity())
+        Log.d("TodoRepository", "Inserted task at position $order: $title (rowId: $rowId)")
+        rowId
+    }
+
+    suspend fun addTaskBefore(
+        targetId: Long,
+        title: String,
+        content: String? = null,
+        priority: Priority = Priority.DEFAULT
+    ): Result<Long> = dbWrite("add task before $targetId: $title") {
+        val targetTask = database.taskDao().getTaskById(targetId)
+            ?: throw IllegalArgumentException("Target task not found: $targetId")
+
+        val shiftedRows = database.taskDao().bulkShiftOrders(
+            parentId = targetTask.parentId,
+            fromInclusive = targetTask.orderInParent,
+            delta = 1L
+        )
+
+        val now = Clock.System.now()
+        val newTask = Task(
+            id = null,
+            title = title,
+            content = content,
+            status = TaskStatus.OPEN,
+            priority = priority,
+            parentId = targetTask.parentId,
+            createdAt = now,
+            updatedAt = now,
+            orderInParent = targetTask.orderInParent
+        )
+
+        val rowId = database.taskDao().insert(newTask.toEntity())
+        Log.d("TodoRepository", "Added task before $targetId: $title (shifted $shiftedRows tasks, rowId: $rowId)")
+        rowId
+    }
+
+    suspend fun updateTask(
+        id: Long,
+        title: String? = null,
+        content: String? = null,
+        priority: Priority? = null,
+        dueAt: Instant? = null
+    ): Result<Boolean> = dbWrite("update task: $id") {
+        val currentTask = database.taskDao().getTaskById(id)?.toDomain()
+        if (currentTask == null) {
+            Log.w("TodoRepository", "Task not found for update: $id")
+            return@dbWrite false
+        }
+
+        val updatedTask = currentTask.copy(
+            title = title ?: currentTask.title,
+            content = content ?: currentTask.content,
+            priority = priority ?: currentTask.priority,
+            dueAt = dueAt ?: currentTask.dueAt,
+            updatedAt = Clock.System.now()
+        )
+
+        val rowsUpdated = database.taskDao().update(updatedTask.toEntity())
+        if (rowsUpdated > 0) {
+            Log.d("TodoRepository", "Updated task: $id")
+            true
+        } else {
+            Log.w("TodoRepository", "Task not found for update: $id")
+            false
         }
     }
 
-    /**
-     * Toggle the completion status of a task in the database.
-     * Uses efficient updateStatus method for better performance.
-     * 
-     * @param id The ID of the task to toggle
-     * @param done Whether the task should be marked as done
-     */
-    fun toggleTaskStatus(id: Long, done: Boolean) {
-        repositoryScope.launch {
-            try {
-                val newStatus = if (done) TaskStatus.DONE else TaskStatus.OPEN
-                val updatedAt = Clock.System.now().toEpochMilliseconds()
-                
-                // Use efficient status-only update
-                val rowsUpdated = database.taskDao().updateStatus(id, newStatus, updatedAt)
-                
-                if (rowsUpdated > 0) {
-                    Log.d("TodoRepository", "Toggled task status: $id -> $done")
-                } else {
-                    Log.w("TodoRepository", "Task not found for toggle: $id")
-                }
-            } catch (e: Exception) {
-                Log.e("TodoRepository", "Failed to toggle task status: $id", e)
-            }
-        }
-    }
-
-    /**
-     * Update only the title of a task.
-     * More efficient than updating the entire entity.
-     * 
-     * @param id Task ID to update
-     * @param title New title
-     * @param updatedAt Updated timestamp
-     */
-    suspend fun updateTitle(id: Long, title: String, updatedAt: Long) {
-        try {
+    suspend fun updateTitle(id: Long, title: String, updatedAt: Long): Result<Boolean> =
+        dbWrite("update task title: $id") {
             val rowsUpdated = database.taskDao().updateTitle(id, title, updatedAt)
-            if (rowsUpdated > 0) {
-                Log.d("TodoRepository", "Updated task title: $id -> $title")
-            } else {
-                Log.w("TodoRepository", "Task not found for title update: $id")
-            }
-        } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to update task title: $id", e)
+            logRowsUpdated("Updated task title: $id -> $title", "Task not found for title update: $id", rowsUpdated)
         }
-    }
 
-    /**
-     * Update only the content of a task.
-     * More efficient than updating the entire entity.
-     * 
-     * @param id Task ID to update
-     * @param content New content
-     * @param updatedAt Updated timestamp
-     */
-    suspend fun updateContent(id: Long, content: String?, updatedAt: Long) {
-        try {
+    suspend fun updateContent(id: Long, content: String?, updatedAt: Long): Result<Boolean> =
+        dbWrite("update task content: $id") {
             val rowsUpdated = database.taskDao().updateContent(id, content, updatedAt)
-            if (rowsUpdated > 0) {
-                Log.d("TodoRepository", "Updated task content: $id")
-            } else {
-                Log.w("TodoRepository", "Task not found for content update: $id")
-            }
-        } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to update task content: $id", e)
+            logRowsUpdated("Updated task content: $id", "Task not found for content update: $id", rowsUpdated)
         }
-    }
 
-    /**
-     * Update only the status of a task.
-     * More efficient than updating the entire entity.
-     * 
-     * @param id Task ID to update
-     * @param status New status
-     * @param updatedAt Updated timestamp
-     */
-    suspend fun updateStatus(id: Long, status: TaskStatus, updatedAt: Long) {
-        try {
-            val rowsUpdated = database.taskDao().updateStatus(id, status, updatedAt)
-            if (rowsUpdated > 0) {
-                Log.d("TodoRepository", "Updated task status: $id -> $status")
-            } else {
-                Log.w("TodoRepository", "Task not found for status update: $id")
+    suspend fun updateStatus(id: Long, status: TaskStatus, updatedAt: Long): Result<Boolean> =
+        dbWrite("update task status: $id") {
+            val rowsUpdated = database.withTransaction {
+                updateStatusWithDoneCascade(id, status, updatedAt)
             }
-        } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to update task status: $id", e)
+            logRowsUpdated("Updated task status: $id -> $status", "Task not found for status update: $id", rowsUpdated)
         }
-    }
 
-    /**
-     * Update only the due date of a task.
-     * More efficient than updating the entire entity.
-     * 
-     * @param id Task ID to update
-     * @param dueAt New due date (null for no due date)
-     * @param updatedAt Updated timestamp
-     */
-    suspend fun updateDueAt(id: Long, dueAt: Instant?, updatedAt: Long) {
-        try {
+    suspend fun updateDueAt(id: Long, dueAt: Instant?, updatedAt: Long): Result<Boolean> =
+        dbWrite("update task due date: $id") {
             val dueAtMs = dueAt?.toEpochMilliseconds()
             val rowsUpdated = database.taskDao().updateDueAt(id, dueAtMs, updatedAt)
-            if (rowsUpdated > 0) {
-                Log.d("TodoRepository", "Updated task due date: $id -> $dueAt")
-            } else {
-                Log.w("TodoRepository", "Task not found for due date update: $id")
+            logRowsUpdated("Updated task due date: $id -> $dueAt", "Task not found for due date update: $id", rowsUpdated)
+        }
+
+    suspend fun updatePriority(id: Long, priority: Priority, updatedAt: Long): Result<Boolean> =
+        dbWrite("update task priority: $id") {
+            val rowsUpdated = database.taskDao().updatePriority(id, priority, updatedAt)
+            logRowsUpdated("Updated task priority: $id -> $priority", "Task not found for priority update: $id", rowsUpdated)
+        }
+
+    suspend fun toggleTaskStatus(id: Long, done: Boolean): Result<Boolean> =
+        dbWrite("toggle task status: $id") {
+            val newStatus = if (done) TaskStatus.DONE else TaskStatus.OPEN
+            val updatedAt = Clock.System.now().toEpochMilliseconds()
+            val rowsUpdated = database.withTransaction {
+                updateStatusWithDoneCascade(id, newStatus, updatedAt)
             }
-        } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to update task due date: $id", e)
+            logRowsUpdated("Toggled task status: $id -> $done", "Task not found for toggle: $id", rowsUpdated)
+        }
+
+    suspend fun deleteTask(id: Long): Result<Boolean> = dbWrite("delete task: $id") {
+        val task = database.taskDao().getTaskById(id)
+        val parentId = task?.parentId
+
+        val rowsDeleted = database.taskDao().deleteById(id)
+        if (rowsDeleted > 0) {
+            database.taskOrderOpsDao().reindexParent(parentId)
+            Log.d("TodoRepository", "Deleted task: $id and reindexed siblings of parent=$parentId")
+            true
+        } else {
+            Log.w("TodoRepository", "Task not found for deletion: $id")
+            false
         }
     }
 
-    /**
-     * Update only the priority of a task.
-     * More efficient than updating the entire entity.
-     * 
-     * @param id Task ID to update
-     * @param priority New priority
-     * @param updatedAt Updated timestamp
-     */
-    suspend fun updatePriority(id: Long, priority: Priority, updatedAt: Long) {
-        try {
-            val rowsUpdated = database.taskDao().updatePriority(id, priority, updatedAt)
-            if (rowsUpdated > 0) {
-                Log.d("TodoRepository", "Updated task priority: $id -> $priority")
-            } else {
-                Log.w("TodoRepository", "Task not found for priority update: $id")
+    suspend fun deleteTaskRecursively(id: Long): Result<Int> = dbWrite("recursively delete task: $id") {
+        val task = database.taskDao().getTaskById(id)
+        val parentId = task?.parentId
+        val totalDeleted = database.taskDao().deleteTaskRecursively(id)
+
+        if (totalDeleted > 0) {
+            database.taskOrderOpsDao().reindexParent(parentId)
+            Log.d("TodoRepository", "Recursively deleted $totalDeleted tasks starting from: $id and reindexed siblings of parent=$parentId")
+        } else {
+            Log.w("TodoRepository", "Task not found for recursive deletion: $id")
+        }
+        totalDeleted
+    }
+
+    suspend fun reorder(taskId: Long, newOrder: Long): Result<Boolean> =
+        dbWrite("reorder task $taskId to $newOrder") {
+            val task = database.taskDao().getTaskById(taskId)
+            if (task == null) {
+                Log.w("TodoRepository", "Task not found for reorder: $taskId")
+                return@dbWrite false
+            }
+
+            database.taskDao().reorderWithinParent(task.parentId, taskId, newOrder)
+            Log.d("TodoRepository", "Reordered task $taskId within parent ${task.parentId} to $newOrder")
+            true
+        }
+
+    suspend fun moveTaskToParent(taskId: Long, newParentId: Long?, newIndex: Long? = null): Result<Boolean> =
+        dbWrite("move task $taskId to parent=$newParentId at index=$newIndex") {
+            val task = database.taskOrderOpsDao().getTaskById(taskId)
+            if (task == null) {
+                Log.w("TodoRepository", "Task not found for move: $taskId")
+                return@dbWrite false
+            }
+
+            database.taskOrderOpsDao().moveToParent(taskId, newParentId, newIndex)
+            Log.d("TodoRepository", "Moved task $taskId to parent=$newParentId at index=${newIndex ?: "end"}")
+            true
+        }
+
+    fun getChildrenFromFlow(parentId: Long): List<Task> {
+        return _tasksStateFlow.value.filter { it.parentId == parentId }
+    }
+
+    suspend fun getChildrenFromDb(parentId: Long?): List<Task> {
+        return try {
+            withContext(Dispatchers.IO) {
+                database.taskDao().getSiblings(parentId).toDomain()
             }
         } catch (e: Exception) {
-            Log.e("TodoRepository", "Failed to update task priority: $id", e)
+            Log.e("TodoRepository", "Failed to get children from DB for parent=$parentId", e)
+            emptyList()
+        }
+    }
+
+    fun getParentProgressFromFlow(parentId: Long): Pair<Int, Int> {
+        val children = getChildrenFromFlow(parentId)
+        val doneCount = children.count { it.status == TaskStatus.DONE }
+        return doneCount to children.size
+    }
+
+    private fun logRowsUpdated(successMessage: String, missingMessage: String, rowsUpdated: Int): Boolean {
+        return if (rowsUpdated > 0) {
+            Log.d("TodoRepository", successMessage)
+            true
+        } else {
+            Log.w("TodoRepository", missingMessage)
+            false
+        }
+    }
+
+    private fun cleanSubtaskTitles(subtaskTitles: List<String>): List<String> {
+        return subtaskTitles.map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    private suspend fun updateStatusWithDoneCascade(id: Long, status: TaskStatus, updatedAt: Long): Int {
+        val rowsUpdated = database.taskDao().updateStatus(id, status, updatedAt)
+        if (rowsUpdated == 0 || status != TaskStatus.DONE) return rowsUpdated
+
+        // Completion cascades only in the DONE direction: checking a parent means the
+        // whole task tree is complete, while reopening a parent should not erase the
+        // user's per-child completion state.
+        val descendantIds = collectDescendantIds(id)
+        if (descendantIds.isEmpty()) return rowsUpdated
+
+        return rowsUpdated + database.taskDao().updateStatusForIds(descendantIds, status, updatedAt)
+    }
+
+    private suspend fun collectDescendantIds(parentId: Long): List<Long> {
+        val descendantIds = mutableListOf<Long>()
+        val visited = mutableSetOf(parentId)
+        val pending = ArrayDeque<Long>()
+        pending.add(parentId)
+
+        while (pending.isNotEmpty()) {
+            val currentParentId = pending.removeLast()
+            val children = database.taskDao().getDirectChildren(currentParentId)
+            children.forEach { child ->
+                if (visited.add(child.id)) {
+                    descendantIds.add(child.id)
+                    pending.add(child.id)
+                }
+            }
+        }
+
+        return descendantIds
+    }
+
+    private suspend fun insertSubtasks(
+        parentId: Long,
+        subtaskTitles: List<String>,
+        priority: Priority,
+        dueAt: Instant?,
+        now: Instant
+    ): List<Long> {
+        val firstOrder = (database.taskDao().getMaxOrderInParent(parentId) ?: -1L) + 1L
+        return subtaskTitles.mapIndexed { index, subtaskTitle ->
+            val subtask = Task(
+                id = null,
+                title = subtaskTitle,
+                content = null,
+                status = TaskStatus.OPEN,
+                priority = priority,
+                parentId = parentId,
+                dueAt = dueAt,
+                createdAt = now,
+                updatedAt = now,
+                orderInParent = firstOrder + index.toLong()
+            )
+            database.taskDao().insert(subtask.toEntity())
         }
     }
 }
+
+data class TaskTreeInsertResult(
+    val parentId: Long,
+    val subtaskIds: List<Long>
+)
