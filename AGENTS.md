@@ -104,6 +104,17 @@ OPENAI_API_KEY=...
 - Kotlin properties initialize in declaration order.
 - Be careful with `MainViewModel` coordinator and `MutableStateFlow` ordering. Do not access a property from `init` before it has been initialized.
 
+### Koog Streaming Tool Calls
+
+- Koog `requestLLMStreaming()` does not append the streamed assistant response back into the prompt history for you. If a streaming agent can call tools, convert the stream to a message response and explicitly `appendPrompt { message(response) }` before the next LLM/tool-result step. Otherwise OpenAI-compatible APIs can reject later requests because `tool` role messages no longer follow a recorded assistant `tool_calls` message.
+- When adapting a stream into `callbackFlow`, do not `close(e)` after emitting a user-visible error event unless the collector is expected to fail. Closing with the throwable rethrows into the collecting coroutine and can crash the app even when the UI handled the error state.
+
+### Instrumentation Tests
+
+- `InstrumentationRegistry.getInstrumentation().context.applicationContext` can be null for the test package context. Repository tests that need an application context should use `targetContext`, or a small `ContextWrapper` whose `applicationContext` returns itself.
+- If a repository test must create a real Room database, redirect `getDatabasePath()` to a test-only cache directory so the test cannot wipe the app's real database.
+- JUnit4 `@Before`, `@After`, and `@Test` methods should use block bodies when wrapping `runBlocking`; expression bodies may compile but appear non-void to the Java runner and fail test initialization.
+
 ### Long-Term Memory
 
 - Long-term memory uses two channels: Room-backed prompt context injection and Koog tool calling.
