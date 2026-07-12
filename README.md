@@ -10,7 +10,7 @@ Images will be added here as the current UI stabilizes.
 
 | Task List | AI Chat | Settings |
 | --- | --- | --- |
-| _Placeholder_ | _Placeholder_ | _Placeholder_ |
+| ![Task List](docs/screenshots/task_list.png) | ![AI Chat](docs/screenshots/ai_chat.png) | ![Settings](docs/screenshots/settings.png) |
 
 ## What It Does
 

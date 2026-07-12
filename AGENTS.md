@@ -23,6 +23,7 @@ This file is the agent/developer maintenance guide. It records **how / guardrail
 - UI: Jetpack Compose + Material 3, single Activity, no Compose Navigation.
 - Main coordination: `MainViewModel` is no longer the whole business object. It wires feature coordinators together, aggregates their state, and routes `AppEvent`.
 - Current coordinators:
+  - `AppShellCoordinator`: app-level page state for the task list/settings shell.
   - `TaskListCoordinator`: task list Flow, task CRUD orchestration, current task snapshot for AI.
   - `TaskDetailCoordinator`: detail sheet state, debounced title/content writes, deletion, loading markers.
   - `ManualAddCoordinator`: manual add form and submit flow.
@@ -32,7 +33,7 @@ This file is the agent/developer maintenance guide. It records **how / guardrail
   - `LongTermMemoryCoordinator`: long-term memory CRUD and memory list observation.
   - `SettingsCoordinator`: AI provider/key/model, subtask division preferences, language switching.
 - Root state: `AppState` aggregates section states; `SettingsState` is built separately by combining settings and long-term memory list state.
-- `MainScreen` still owns substantial UI orchestration: drawer page state, mode calculation, overlay/sheet/date picker placement, and event wiring. Before adding complex pages or modes, decide whether state and orchestration should move into a coordinator.
+- `MainScreen` still owns rendering, drawer open/close state, overlay/sheet/date picker placement, and event wiring. App page state and back-action priority live in the app shell module.
 
 ## Data Layer
 
@@ -43,22 +44,22 @@ This file is the agent/developer maintenance guide. It records **how / guardrail
 - Task model: `TaskEntity` includes `id`, `title`, `content`, `status`, `priority`, `createdAt`, `updatedAt`, `dueAt`, `parentId`, and `orderInParent`.
 - Domain model: `Task` uses `kotlinx.datetime.Instant`; Room stores times as epoch milliseconds through `InstantConverter`.
 - `TodoRepository.tasks` is the Room Flow; `tasksStateFlow` is a legacy bridge and is still used for UI-friendly snapshot queries.
-- Important: many `TodoRepository` write APIs use `repositoryScope.launch` and are fire-and-forget. When UI needs reliable success/failure, test synchronization, or transactional results, first refactor the relevant API to `suspend` / `Result` instead of pretending the current call is synchronous.
+- Task write APIs are `suspend` and return explicit `Result` values. Keep coroutine ownership in callers/coordinators instead of adding new fire-and-forget writes inside the repository.
 
 ## AI Layer
 
 - AI framework: JetBrains Koog (`ai.koog:agents-core-android`).
-- Production implementation: `TodoAgent` implements `ChatAgent`.
+- Production implementation: `TodoAgent` implements both `ChatAgent` and `LlmRuntime`.
 - Providers: OpenAI and DeepSeek, selected through Settings by provider/model/key.
 - Executor: `TodoAgent.buildExecutor()` returns `MultiLLMPromptExecutor`; OpenAI-compatible clients use `KtorKoogHttpClient` to adapt Ktor into Koog.
 - Tools: `TaskToolSet` exposes task create/update/delete/complete tools; `MemoryToolSet` exposes long-term memory add/update/delete/list tools.
 - Prompt context: chat injects `CURRENT_TODO_STATE` plus optional `MEMORY CONTEXT`, and uses `Locale.getDefault().language` to request Chinese or English replies.
+- `ChatAgent` is the chat-only seam. `LlmRuntime` is the provider/model/executor seam used by Settings and subtask division.
 - Guardrail: do not restore the old strict JSON action client. Current action execution is Koog tool calling.
-- `ChatAgent` is currently a wide seam: it handles chat and also exposes provider/model/executor state. If the AI runtime expands further, prefer splitting out a narrower runtime/provider interface.
 
 ## Subtask Division
 
-- Current implementation: `SubtaskDivisionCoordinator` asks the shared `ChatAgent` for the current `PromptExecutor` and `LLModel`, then creates `SubtaskDivisionService` per call.
+- Current implementation: `SubtaskDivisionCoordinator` asks the shared `LlmRuntime` for the current `PromptExecutor` and `LLModel`, then creates `SubtaskDivisionService` per call.
 - `SubtaskDivisionService` chooses `AISubtaskDivider` or `MockSubtaskDivider` based on config.
 - `AISubtaskDivider` uses a Koog agent with a required tool call to produce structured `SubtaskDivisionResponse`.
 - Settings provides `useAI`, `maxSubtasks`, and `DivisionStrategy`; task detail passes these through `SubtaskDivisionEvent.CreateFromSuggestions`.
@@ -82,8 +83,9 @@ OPENAI_API_KEY=...
 - New UI text belongs in `strings.xml` and `values-zh/strings.xml`.
 - When adding AI-facing text, also consider language alignment in prompts; UI translation alone is not enough.
 - New task write paths must account for `orderInParent` and sibling reindexing. Do not insert bare tasks without considering order.
+- Coordinator task-write failures should use the shared `ui.main.sections.logFailure` helper instead of repeating local `Log.e` blocks.
 - When deleting a parent task, prefer the recursive deletion path to avoid orphaned subtasks.
-- Changes involving Settings provider/model/key should also check `TodoAgent` and `SubtaskDivisionCoordinator`, because subtask division reuses the current AI runtime.
+- Changes involving Settings provider/model/key should also check `TodoAgent`, `LlmRuntime`, and `SubtaskDivisionCoordinator`, because subtask division reuses the current AI runtime.
 - Do not turn debug sample reset into "wipe on every install"; data should be cleared only by explicit developer action, app data clearing, or uninstall.
 - Do not use README's historical roadmap to decide whether a feature exists. Confirm with `rg` and code.
 
@@ -110,3 +112,19 @@ OPENAI_API_KEY=...
 - `SeedManager` is injected only in debug production wiring. Release builds and tests that construct `TodoRepository` without a `SeedManager` do not seed sample data.
 - The seed marker is `seed_done_v1`; if sample content changes and old installs should reseed, bump the suffix.
 - Settings debug-only developer reset chain: `MainViewModel.resetSampleData()` -> `TodoRepository.resetSampleData()` -> `SeedManager.resetAndReseed()`.
+
+### Real-Device Debugging And Screenshot Guidelines
+
+When capturing screenshots or performing UI automation on a physical device:
+
+- **Prevent Screen Lock & Timeout**: Since physical devices might lock automatically, temporarily disable timeout and keep the screen awake when plugged into USB:
+  ```bash
+  adb shell settings put system screen_off_timeout 1800000
+  adb shell settings put global stay_on_while_plugged_in 3
+  ```
+  Always restore defaults (e.g., `60000` and `0`) once finished to avoid battery drain.
+- **IME Composition Pitfalls**: Using `adb shell input text` on a device with a stateful IME (like a Chinese Pinyin keyboard) can cause entered characters to be intercepted by predictive text, resulting in unintended selections. 
+  - To bypass this, send a `66` (KEYCODE_ENTER) keyevent right after `input text` to commit the characters.
+  - Alternatively, temporarily switch to a basic English IME using `adb shell ime set`.
+- **Jetpack Compose Frame Settling**: Ensure the screen has fully updated and the keyboard has finished dismissing before taking screen captures to avoid blurred overlay animations or open soft keyboards.
+
