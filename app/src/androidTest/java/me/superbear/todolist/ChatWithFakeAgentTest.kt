@@ -36,9 +36,14 @@ class ChatWithFakeAgentTest {
     fun sendingAMessage_showsTheFakeAgentsReply() {
         val application =
             InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
-        val todoRepository = TodoRepository(application)
+        val database = androidx.room.Room.databaseBuilder(
+            application,
+            me.superbear.todolist.data.model.AppDatabase::class.java,
+            "todolist_database"
+        ).build()
+        val todoRepository = TodoRepository(database)
         val longTermMemoryRepository =
-            LongTermMemoryRepository(todoRepository.database.longTermMemoryDao())
+            LongTermMemoryRepository(database.longTermMemoryDao())
         val fakeAgent = FakeChatAgent(reply = "Fake agent reply")
         val viewModel = MainViewModel(
             application,

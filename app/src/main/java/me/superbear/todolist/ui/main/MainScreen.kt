@@ -39,10 +39,8 @@ import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ui.common.chat.ChatInputBar
 import me.superbear.todolist.domain.entities.MessageStatus
 import me.superbear.todolist.domain.entities.Sender
-import me.superbear.todolist.ui.main.sections.appShell.AppShellBackAction
 import me.superbear.todolist.ui.main.sections.appShell.AppMode
 import me.superbear.todolist.ui.main.sections.appShell.AppPage
-import me.superbear.todolist.ui.main.sections.appShell.AppShellEvent
 import me.superbear.todolist.ui.main.sections.appShell.resolveBackAction
 import me.superbear.todolist.ui.main.sections.appShell.resolveAppMode
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayMode
@@ -51,11 +49,7 @@ import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerSecti
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddSection
 import me.superbear.todolist.ui.main.detail.TaskDetailSheet
 import me.superbear.todolist.ui.main.sections.tasks.TaskSection
-import me.superbear.todolist.ui.main.sections.tasks.TaskEvent as TaskSectionEvent
-import me.superbear.todolist.ui.main.state.AppEvent
-import me.superbear.todolist.ui.main.sections.taskDetail.TaskDetailEvent
-import me.superbear.todolist.ui.main.sections.subtaskDivision.SubtaskDivisionEvent
-import me.superbear.todolist.ui.main.sections.longTermMemory.LongTermMemoryEvent
+import me.superbear.todolist.ui.main.state.MainScreenIntent
 import me.superbear.todolist.ui.settings.ProviderDisplayInfo
 import me.superbear.todolist.ui.settings.SettingsScreen
 import me.superbear.todolist.ui.settings.SettingsState
@@ -89,19 +83,7 @@ fun MainScreen(
 
     // 物理返回键处理：在不同模式下拦截并派发相应事件
     BackHandler(enabled = backAction != null) {
-        when (backAction) {
-            AppShellBackAction.HideTaskDetail -> onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
-            AppShellBackAction.CloseManualAdd -> onEvent(
-                AppEvent.ManualAdd(me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Close)
-            )
-            AppShellBackAction.ExitFullscreenChat -> onEvent(
-                AppEvent.ChatOverlay(me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.SetChatOverlayMode("peek"))
-            )
-            AppShellBackAction.NavigateToTaskList -> onEvent(
-                AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.TaskList))
-            )
-            null -> Unit
-        }
+        onEvent(MainScreenIntent.HandleBackPressed)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -141,7 +123,7 @@ fun MainScreen(
                             scope.launch {
                                 drawerState.close()
                             }
-                            onEvent(AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.TaskList)))
+                            onEvent(MainScreenIntent.NavigateTo(AppPage.TaskList))
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
@@ -166,7 +148,7 @@ fun MainScreen(
                             scope.launch {
                                 drawerState.close()
                             }
-                            onEvent(AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.Settings)))
+                            onEvent(MainScreenIntent.NavigateTo(AppPage.Settings))
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
@@ -236,20 +218,14 @@ fun MainScreen(
                     ChatInputBar(
                         onSend = { message ->
                             // 发送消息到聊天层
-                            onEvent(AppEvent.ChatOverlay(
-                                me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.SendMessage(message)
-                            ))
+                            onEvent(MainScreenIntent.SendChatMessage(message))
                         },
                         onDockClick = { 
                             // 切换聊天模式：若已在全屏则返回 Peek，否则进入全屏
                             if (state.chatOverlayState.chatOverlayMode == "fullscreen") {
-                                onEvent(AppEvent.ChatOverlay(
-                                    me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.SetChatOverlayMode("peek")
-                                ))
+                                onEvent(MainScreenIntent.SetChatOverlayMode("peek"))
                             } else {
-                                onEvent(AppEvent.ChatOverlay(
-                                    me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.EnterFullscreenChat
-                                ))
+                                onEvent(MainScreenIntent.SetChatOverlayMode("fullscreen"))
                             }
                         },
                         modifier = Modifier
@@ -265,17 +241,13 @@ fun MainScreen(
                     ManualAddFab(
                         onClick = { 
                             // 打开手动添加面板
-                            onEvent(AppEvent.ManualAdd(
-                                me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Open
-                            ))
+                            onEvent(MainScreenIntent.OpenManualAdd)
                         },
                         modifier = Modifier
                             .onSizeChanged {
                                 // 记录 FAB 宽度（用于聊天“窥视”布局避让）
-                                onEvent(AppEvent.ChatOverlay(
-                                    me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.FabMeasured(
-                                        with(localDensity) { it.width.toDp() }
-                                    )
+                                onEvent(MainScreenIntent.FabMeasured(
+                                    with(localDensity) { it.width.toDp() }
                                 ))
                             }
                     )
@@ -297,21 +269,21 @@ fun MainScreen(
                             state = state.taskState,
                             onToggleTask = { task ->
                                 // 切换任务完成状态
-                                onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
+                                onEvent(MainScreenIntent.ToggleTask(task))
                             },
                             onAddSubtask = { parentId, title ->
                                 // 新增子任务
-                                onEvent(AppEvent.Task(TaskSectionEvent.AddSubtask(parentId, title)))
+                                onEvent(MainScreenIntent.AddSubtask(parentId, title))
                             },
                             onToggleSubtask = { childId, done ->
                                 // 切换子任务完成状态
-                                onEvent(AppEvent.Task(TaskSectionEvent.ToggleSubtask(childId, done)))
+                                onEvent(MainScreenIntent.ToggleSubtask(childId, done))
                             },
                             getChildren = viewModel::getChildren,
                             getParentProgress = viewModel::getParentProgress,
                             onTaskClick = { task ->
                                 task.id?.let { id ->
-                                    onEvent(AppEvent.TaskDetail(TaskDetailEvent.ShowDetail(id)))
+                                    onEvent(MainScreenIntent.ShowTaskDetail(id))
                                 }
                             },
                             modifier = Modifier.fillMaxSize()
@@ -322,7 +294,7 @@ fun MainScreen(
                     // 设置页面
                     SettingsScreen(
                         onNavigateBack = {
-                            onEvent(AppEvent.AppShell(AppShellEvent.NavigateTo(AppPage.TaskList)))
+                            onEvent(MainScreenIntent.NavigateTo(AppPage.TaskList))
                         },
                         settingsState = settingsState,
                         onSettingsChange = viewModel::updateSettings,
@@ -339,24 +311,16 @@ fun MainScreen(
                             ProviderDisplayInfo(info.displayName, info.fallbackModels)
                         },
                         onAddMemory = { content, category, importance, isActive ->
-                            onEvent(AppEvent.LongTermMemory(
-                                LongTermMemoryEvent.AddMemory(content, category, importance, isActive)
-                            ))
+                            onEvent(MainScreenIntent.AddMemory(content, category, importance, isActive))
                         },
                         onEditMemory = { memory, content, category, importance, isActive ->
-                            onEvent(AppEvent.LongTermMemory(
-                                LongTermMemoryEvent.EditMemory(memory, content, category, importance, isActive)
-                            ))
+                            onEvent(MainScreenIntent.EditMemory(memory, content, category, importance, isActive))
                         },
                         onDeleteMemory = { memory ->
-                            onEvent(AppEvent.LongTermMemory(
-                                LongTermMemoryEvent.DeleteMemory(memory)
-                            ))
+                            onEvent(MainScreenIntent.DeleteMemory(memory))
                         },
                         onToggleMemoryActive = { memory, isActive ->
-                            onEvent(AppEvent.LongTermMemory(
-                                LongTermMemoryEvent.ToggleMemoryActive(memory, isActive)
-                            ))
+                            onEvent(MainScreenIntent.ToggleMemoryActive(memory, isActive))
                         },
                         onLanguageChange = viewModel::updateLanguage,
                         onResetSampleData = viewModel::resetSampleData
@@ -393,9 +357,7 @@ fun MainScreen(
             },
             onMessageTimeout = { id -> 
                 // Peek 消息的自动消退
-                onEvent(AppEvent.ChatOverlay(
-                    me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent.DismissPeekMessage(id)
-                ))
+                onEvent(MainScreenIntent.DismissPeekMessage(id))
             }
         )
 
@@ -404,9 +366,7 @@ fun MainScreen(
             Scrim(
                 onDismiss = { 
                     // 点击遮罩关闭
-                    onEvent(AppEvent.ManualAdd(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Close
-                    ))
+                    onEvent(MainScreenIntent.CloseManualAdd)
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -416,54 +376,35 @@ fun MainScreen(
                 priorityState = state.priorityState,
                 onTitleChange = { title ->
                     // 标题输入
-                    onEvent(AppEvent.ManualAdd(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.ChangeTitle(title)
-                    ))
+                    onEvent(MainScreenIntent.TypeManualAddTitle(title))
                 },
                 onDescriptionChange = { desc ->
                     // 描述输入
-                    onEvent(AppEvent.ManualAdd(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.ChangeDescription(desc)
-                    ))
+                    onEvent(MainScreenIntent.TypeManualAddDescription(desc))
                 },
                 onSubmit = {
                     // 提交创建任务
-                    onEvent(AppEvent.ManualAdd(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Submit(
-                            state.manualAddState.title,
-                            state.manualAddState.description
-                        )
-                    ))
+                    onEvent(MainScreenIntent.SubmitManualAdd)
                 },
                 onCancel = {
                     // 取消并关闭
-                    onEvent(AppEvent.ManualAdd(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent.Close
-                    ))
+                    onEvent(MainScreenIntent.CloseManualAdd)
                 },
                 onDueDateClick = {
                     // 打开日期时间选择器
-                    onEvent(AppEvent.DateTimePicker(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Open
-                    ))
+                    onEvent(MainScreenIntent.OpenDateTimePicker(state.dateTimePickerState.selectedDueDateMs))
                 },
                 onPriorityClick = {
                     // 打开优先级菜单
-                    onEvent(AppEvent.Priority(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityEvent.OpenMenu
-                    ))
+                    onEvent(MainScreenIntent.OpenPriorityMenu)
                 },
                 onPrioritySelected = { priority ->
                     // 选择优先级
-                    onEvent(AppEvent.Priority(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityEvent.SetPriority(priority)
-                    ))
+                    onEvent(MainScreenIntent.SetManualAddPriority(priority))
                 },
                 onPriorityDismiss = {
                     // 关闭优先级菜单
-                    onEvent(AppEvent.Priority(
-                        me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityEvent.CloseMenu
-                    ))
+                    onEvent(MainScreenIntent.ClosePriorityMenu)
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
@@ -475,64 +416,55 @@ fun MainScreen(
             task = viewModel.getSelectedTask(),
             title = state.taskDetailState.editedTitle,
             onTitleChange = { newTitle ->
-                onEvent(AppEvent.TaskDetail(TaskDetailEvent.EditTitle(newTitle)))
+                onEvent(MainScreenIntent.EditTaskTitle(newTitle))
             },
             content = state.taskDetailState.editedContent,
             onContentChange = { newContent ->
-                onEvent(AppEvent.TaskDetail(TaskDetailEvent.EditContent(newContent)))
+                onEvent(MainScreenIntent.EditTaskContent(newContent))
             },
             subtasks = state.taskDetailState.selectedTaskId?.let { viewModel.getChildren(it) } ?: emptyList(),
             onToggleSubtask = { subtaskId, done ->
-                onEvent(AppEvent.Task(TaskSectionEvent.ToggleSubtask(subtaskId.toLong(), done)))
+                onEvent(MainScreenIntent.ToggleSubtask(subtaskId.toLong(), done))
             },
             onEditSubtaskTitle = { subtaskId, newTitle ->
-                onEvent(AppEvent.Task(TaskSectionEvent.UpdateSubtaskTitle(subtaskId.toLong(), newTitle)))
+                onEvent(MainScreenIntent.EditSubtaskTitle(subtaskId.toLong(), newTitle))
             },
             onAddSubtask = { parentId, title, order ->
-                onEvent(AppEvent.Task(TaskSectionEvent.AddSubtask(parentId, title, order)))
+                onEvent(MainScreenIntent.AddSubtask(parentId, title, order))
             },
             onDeleteSubtask = { subtaskId ->
-                onEvent(AppEvent.Task(TaskSectionEvent.DeleteSubtask(subtaskId)))
+                onEvent(MainScreenIntent.DeleteSubtask(subtaskId))
             },
             onDismiss = {
-                onEvent(AppEvent.TaskDetail(TaskDetailEvent.HideDetail))
+                onEvent(MainScreenIntent.HideTaskDetail)
             },
             onToggleDone = { task, done ->
                 // 切换任务完成状态
-                onEvent(AppEvent.Task(TaskSectionEvent.Toggle(task)))
+                onEvent(MainScreenIntent.ToggleTask(task))
             },
             onChangeDue = { task ->
                 // 打开日期时间选择器
-                onEvent(AppEvent.DateTimePicker(
-                    me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Open
-                ))
+                onEvent(MainScreenIntent.OpenDateTimePicker(task.dueAt?.toEpochMilliseconds()))
             },
             onChangePriority = { task, priority ->
                 // 更新任务优先级 (task.id为null表示是顶级task，使用selectedTaskId)
                 val taskId = task.id ?: state.taskDetailState.selectedTaskId
                 taskId?.let { id ->
-                    onEvent(AppEvent.TaskDetail(TaskDetailEvent.UpdatePriority(id, priority)))
+                    onEvent(MainScreenIntent.UpdateTaskPriority(id, priority))
                 }
             },
             onDivideSubtasks = { taskId ->
                 // 使用设置页面配置的策略触发子任务划分
-                onEvent(AppEvent.SubtaskDivision(
-                    SubtaskDivisionEvent.CreateFromSuggestions(
-                        taskId = taskId,
-                        strategy = settingsState.aiDivisionStrategy,
-                        maxSubtasks = settingsState.maxSubtasks,
-                        useAI = settingsState.useAI
-                    )
-                ))
+                onEvent(MainScreenIntent.DivideSubtasks(taskId))
             },
             onDeleteTask = { task ->
                 // 删除任务 (task.id为null表示是顶级task，使用selectedTaskId)
                 val taskId = task.id ?: state.taskDetailState.selectedTaskId
                 taskId?.let { id ->
-                    onEvent(AppEvent.TaskDetail(TaskDetailEvent.DeleteTask(id)))
+                    onEvent(MainScreenIntent.DeleteTask(id))
                 }
             },
-            isSubtaskDivisionLoading = state.taskDetailState.isSubtaskDivisionLoading
+            isSubtaskDivisionLoading = state.subtaskDivisionState.isSubtaskDivisionLoading
         )
 
         
@@ -541,19 +473,13 @@ fun MainScreen(
             state = state.dateTimePickerState,
             onDateTimeSelected = { timestamp ->
                 // 设置截止时间并关闭
-                onEvent(AppEvent.DateTimePicker(
-                    me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.SetDueDate(timestamp)
-                ))
+                onEvent(MainScreenIntent.SetDueDate(timestamp))
                 // 自动关闭日期选择器
-                onEvent(AppEvent.DateTimePicker(
-                    me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Close
-                ))
+                onEvent(MainScreenIntent.CloseDateTimePicker)
             },
             onCancel = {
                 // 关闭选择器
-                onEvent(AppEvent.DateTimePicker(
-                    me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.Close
-                ))
+                onEvent(MainScreenIntent.CloseDateTimePicker)
             }
         )
     }

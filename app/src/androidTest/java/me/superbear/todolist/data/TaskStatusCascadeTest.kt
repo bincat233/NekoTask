@@ -26,8 +26,13 @@ class TaskStatusCascadeTest {
         runBlocking {
             val context = RepositoryTestContext(InstrumentationRegistry.getInstrumentation().targetContext)
             context.deleteDatabase(DATABASE_NAME)
-            repository = TodoRepository(context)
-            repository.require().database.taskDao().deleteAll()
+            val database = androidx.room.Room.databaseBuilder(
+                context,
+                me.superbear.todolist.data.model.AppDatabase::class.java,
+                DATABASE_NAME
+            ).build()
+            repository = TodoRepository(database)
+            database.taskDao().deleteAll()
         }
     }
 

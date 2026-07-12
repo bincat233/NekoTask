@@ -6,6 +6,7 @@ import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerState
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddState
 import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityState
 import me.superbear.todolist.ui.main.sections.taskDetail.TaskDetailState
+import me.superbear.todolist.ui.main.sections.subtaskDivision.SubtaskDivisionState
 import me.superbear.todolist.ui.main.sections.tasks.TaskState
 
 /**
@@ -18,5 +19,6 @@ data class AppState(
     val manualAddState: ManualAddState = ManualAddState(),
     val dateTimePickerState: DateTimePickerState = DateTimePickerState(),
     val priorityState: PriorityState = PriorityState(),
-    val taskDetailState: TaskDetailState = TaskDetailState()
+    val taskDetailState: TaskDetailState = TaskDetailState(),
+    val subtaskDivisionState: SubtaskDivisionState = SubtaskDivisionState()
 )

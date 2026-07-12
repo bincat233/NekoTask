@@ -26,15 +26,30 @@ import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatCoordinator
 import me.superbear.todolist.ui.main.sections.longTermMemory.LongTermMemoryCoordinator
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerCoordinator
+import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddCoordinator
 import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityCoordinator
 import me.superbear.todolist.ui.main.sections.subtaskDivision.SubtaskDivisionCoordinator
 import me.superbear.todolist.ui.main.sections.taskDetail.TaskDetailCoordinator
+import me.superbear.todolist.ui.main.sections.taskDetail.TaskDetailEvent
 import me.superbear.todolist.ui.main.sections.tasks.TaskListCoordinator
-import me.superbear.todolist.ui.main.state.AppEvent
+import me.superbear.todolist.ui.main.state.MainScreenIntent
 import me.superbear.todolist.ui.main.state.AppState
+import me.superbear.todolist.data.model.AppDatabase
+import androidx.room.Room
 import me.superbear.todolist.data.repository.LongTermMemoryRepository
+import me.superbear.todolist.ui.main.sections.appShell.AppPage
 import me.superbear.todolist.ui.main.sections.appShell.AppShellCoordinator
+import me.superbear.todolist.ui.main.sections.appShell.AppShellEvent
+import me.superbear.todolist.ui.main.sections.appShell.AppShellBackAction
+import me.superbear.todolist.ui.main.sections.appShell.resolveAppMode
+import me.superbear.todolist.ui.main.sections.appShell.resolveBackAction
+import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayEvent
+import me.superbear.todolist.ui.main.sections.longTermMemory.LongTermMemoryEvent
+import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddEvent
+import me.superbear.todolist.ui.main.sections.manualAddSuite.PriorityEvent
+import me.superbear.todolist.ui.main.sections.subtaskDivision.SubtaskDivisionEvent
+import me.superbear.todolist.ui.main.sections.tasks.TaskEvent
 import me.superbear.todolist.ui.settings.SettingsCoordinator
 import me.superbear.todolist.ui.settings.SettingsState
 
@@ -59,14 +74,14 @@ class MainViewModel(
     private val settingsCoordinator = SettingsCoordinator(prefs, llmRuntime)
     private val taskListCoordinator = TaskListCoordinator(todoRepository, viewModelScope)
     private val taskDetailCoordinator = TaskDetailCoordinator(todoRepository, taskListCoordinator, viewModelScope)
-    private val dateTimePickerCoordinator = DateTimePickerCoordinator(todoRepository, taskDetailCoordinator, viewModelScope)
-    private val priorityCoordinator = PriorityCoordinator(todoRepository, taskDetailCoordinator, viewModelScope)
+    private val dateTimePickerCoordinator = DateTimePickerCoordinator(viewModelScope)
+    private val priorityCoordinator = PriorityCoordinator()
     private val manualAddCoordinator = ManualAddCoordinator(todoRepository, dateTimePickerCoordinator, priorityCoordinator, viewModelScope)
     private val chatCoordinator = ChatCoordinator(
         chatAgent, longTermMemoryRepository, taskListCoordinator, getApplication(), viewModelScope
     )
     private val subtaskDivisionCoordinator = SubtaskDivisionCoordinator(
-        llmRuntime, todoRepository, taskListCoordinator, taskDetailCoordinator, viewModelScope
+        llmRuntime, todoRepository, taskListCoordinator, viewModelScope
     )
 
     // Thin delegating wrappers so MainScreen.kt's direct-call surface doesn't need to change.
@@ -97,6 +112,11 @@ class MainViewModel(
         viewModelScope.launch {
             appShellCoordinator.state.collect { appShellState ->
                 _appState.update { it.copy(appShellState = appShellState) }
+            }
+        }
+        viewModelScope.launch {
+            subtaskDivisionCoordinator.state.collect { subtaskDivisionState ->
+                _appState.update { it.copy(subtaskDivisionState = subtaskDivisionState) }
             }
         }
         viewModelScope.launch {
@@ -133,17 +153,109 @@ class MainViewModel(
 
     fun resetSampleData() = taskListCoordinator.resetSampleData()
 
-    fun onEvent(event: AppEvent) {
+    fun onEvent(event: MainScreenIntent) {
         when (event) {
-            is AppEvent.AppShell -> appShellCoordinator.handleEvent(event.event)
-            is AppEvent.Task -> taskListCoordinator.handleEvent(event.event)
-            is AppEvent.ChatOverlay -> chatCoordinator.handleEvent(event.event)
-            is AppEvent.ManualAdd -> manualAddCoordinator.handleEvent(event.event)
-            is AppEvent.DateTimePicker -> dateTimePickerCoordinator.handleEvent(event.event)
-            is AppEvent.Priority -> priorityCoordinator.handleEvent(event.event)
-            is AppEvent.TaskDetail -> taskDetailCoordinator.handleEvent(event.event)
-            is AppEvent.SubtaskDivision -> subtaskDivisionCoordinator.handleEvent(event.event)
-            is AppEvent.LongTermMemory -> longTermMemoryCoordinator.handleEvent(event.event)
+            is MainScreenIntent.NavigateTo -> appShellCoordinator.handleEvent(AppShellEvent.NavigateTo(event.page))
+            is MainScreenIntent.HandleBackPressed -> handleBackPressed()
+
+            // Task List
+            is MainScreenIntent.ToggleTask -> taskListCoordinator.handleEvent(TaskEvent.Toggle(event.task))
+            is MainScreenIntent.AddTaskDirectly -> taskListCoordinator.handleEvent(TaskEvent.AddSubtask(0L, event.title, null))
+
+            // Task Detail
+            is MainScreenIntent.ShowTaskDetail -> taskDetailCoordinator.handleEvent(TaskDetailEvent.ShowDetail(event.taskId))
+            is MainScreenIntent.HideTaskDetail -> taskDetailCoordinator.handleEvent(TaskDetailEvent.HideDetail)
+            is MainScreenIntent.EditTaskTitle -> taskDetailCoordinator.handleEvent(TaskDetailEvent.EditTitle(event.title))
+            is MainScreenIntent.EditTaskContent -> taskDetailCoordinator.handleEvent(TaskDetailEvent.EditContent(event.content))
+            is MainScreenIntent.UpdateTaskPriority -> taskDetailCoordinator.handleEvent(TaskDetailEvent.UpdatePriority(event.taskId, event.priority))
+            is MainScreenIntent.DeleteTask -> taskDetailCoordinator.handleEvent(TaskDetailEvent.DeleteTask(event.taskId))
+
+            // Subtasks
+            is MainScreenIntent.AddSubtask -> taskListCoordinator.handleEvent(TaskEvent.AddSubtask(event.parentId, event.title, event.order))
+            is MainScreenIntent.ToggleSubtask -> taskListCoordinator.handleEvent(TaskEvent.ToggleSubtask(event.subtaskId, event.done))
+            is MainScreenIntent.EditSubtaskTitle -> taskListCoordinator.handleEvent(TaskEvent.UpdateSubtaskTitle(event.subtaskId, event.title))
+            is MainScreenIntent.DeleteSubtask -> taskListCoordinator.handleEvent(TaskEvent.DeleteSubtask(event.subtaskId))
+            is MainScreenIntent.DivideSubtasks -> {
+                val settings = settingsCoordinator.settingsState.value
+                subtaskDivisionCoordinator.handleEvent(
+                    SubtaskDivisionEvent.CreateFromSuggestions(
+                        taskId = event.taskId,
+                        strategy = settings.aiDivisionStrategy,
+                        maxSubtasks = settings.maxSubtasks,
+                        useAI = settings.useAI
+                    )
+                )
+            }
+
+            // DateTime Picker
+            is MainScreenIntent.OpenDateTimePicker -> dateTimePickerCoordinator.handleEvent(DateTimePickerEvent.Open(event.initialDueDateMs))
+            is MainScreenIntent.SetDueDate -> {
+                val detail = taskDetailCoordinator.state.value
+                val taskId = detail.selectedTaskId
+                if (detail.isVisible && taskId != null) {
+                    taskDetailCoordinator.handleEvent(TaskDetailEvent.UpdateDueDate(taskId, event.timestamp))
+                } else {
+                    dateTimePickerCoordinator.handleEvent(DateTimePickerEvent.SetDueDate(event.timestamp))
+                }
+            }
+            is MainScreenIntent.CloseDateTimePicker -> dateTimePickerCoordinator.handleEvent(DateTimePickerEvent.Close)
+
+            // Priority Picker
+            is MainScreenIntent.OpenPriorityMenu -> priorityCoordinator.handleEvent(PriorityEvent.OpenMenu)
+            is MainScreenIntent.SetManualAddPriority -> priorityCoordinator.handleEvent(PriorityEvent.SetPriority(event.priority))
+            is MainScreenIntent.ClosePriorityMenu -> priorityCoordinator.handleEvent(PriorityEvent.CloseMenu)
+
+            // Manual Add
+            is MainScreenIntent.TypeManualAddTitle -> manualAddCoordinator.handleEvent(ManualAddEvent.ChangeTitle(event.title))
+            is MainScreenIntent.TypeManualAddDescription -> manualAddCoordinator.handleEvent(ManualAddEvent.ChangeDescription(event.description))
+            is MainScreenIntent.OpenManualAdd -> manualAddCoordinator.handleEvent(ManualAddEvent.Open)
+            is MainScreenIntent.CloseManualAdd -> {
+                manualAddCoordinator.handleEvent(ManualAddEvent.Close)
+                dateTimePickerCoordinator.reset()
+                priorityCoordinator.reset()
+            }
+            is MainScreenIntent.SubmitManualAdd -> {
+                val manualState = appState.value.manualAddState
+                manualAddCoordinator.handleEvent(ManualAddEvent.Submit(manualState.title, manualState.description))
+            }
+
+            // Chat
+            is MainScreenIntent.SendChatMessage -> chatCoordinator.handleEvent(ChatOverlayEvent.SendMessage(event.text))
+            is MainScreenIntent.SetChatOverlayMode -> chatCoordinator.handleEvent(ChatOverlayEvent.SetChatOverlayMode(event.mode))
+            is MainScreenIntent.FabMeasured -> chatCoordinator.handleEvent(ChatOverlayEvent.FabMeasured(event.widthDp))
+            is MainScreenIntent.DismissPeekMessage -> chatCoordinator.handleEvent(ChatOverlayEvent.DismissPeekMessage(event.id))
+
+            // Long Term Memory
+            is MainScreenIntent.AddMemory -> longTermMemoryCoordinator.handleEvent(LongTermMemoryEvent.AddMemory(event.content, event.category, event.importance, event.isActive))
+            is MainScreenIntent.EditMemory -> longTermMemoryCoordinator.handleEvent(LongTermMemoryEvent.EditMemory(event.memory, event.content, event.category, event.importance, event.isActive))
+            is MainScreenIntent.DeleteMemory -> longTermMemoryCoordinator.handleEvent(LongTermMemoryEvent.DeleteMemory(event.memory))
+            is MainScreenIntent.ToggleMemoryActive -> longTermMemoryCoordinator.handleEvent(LongTermMemoryEvent.ToggleMemoryActive(event.memory, event.isActive))
+
+            // Settings
+            is MainScreenIntent.SaveSettings -> settingsCoordinator.updateSettings(event.state)
+        }
+    }
+
+    private fun handleBackPressed() {
+        val state = appState.value
+        val currentPage = state.appShellState.currentPage
+        val currentMode = resolveAppMode(state.manualAddState.isOpen, state.chatOverlayState.chatOverlayMode)
+        val backAction = resolveBackAction(currentPage, currentMode, state.taskDetailState.isVisible)
+
+        when (backAction) {
+            AppShellBackAction.HideTaskDetail -> taskDetailCoordinator.handleEvent(TaskDetailEvent.HideDetail)
+            AppShellBackAction.CloseManualAdd -> {
+                manualAddCoordinator.handleEvent(ManualAddEvent.Close)
+                dateTimePickerCoordinator.reset()
+                priorityCoordinator.reset()
+            }
+            AppShellBackAction.ExitFullscreenChat -> chatCoordinator.handleEvent(
+                ChatOverlayEvent.SetChatOverlayMode("peek")
+            )
+            AppShellBackAction.NavigateToTaskList -> appShellCoordinator.handleEvent(
+                AppShellEvent.NavigateTo(AppPage.TaskList)
+            )
+            null -> Unit
         }
     }
 
@@ -164,8 +276,20 @@ class MainViewModel(
             initializer {
                 val application = checkNotNull(this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
                 val seedManager = if (BuildConfig.DEBUG) SeedManager(application) else null
-                val todoRepository = TodoRepository(application, seedManager)
-                val longTermMemoryRepository = LongTermMemoryRepository(todoRepository.database.longTermMemoryDao())
+                
+                val database = Room.databaseBuilder(
+                    application,
+                    AppDatabase::class.java,
+                    "todolist_database"
+                ).apply {
+                    addMigrations(AppDatabase.MIGRATION_4_5)
+                    if (BuildConfig.DEBUG) {
+                        fallbackToDestructiveMigration(false)
+                    }
+                }.build()
+
+                val todoRepository = TodoRepository(database, seedManager)
+                val longTermMemoryRepository = LongTermMemoryRepository(database.longTermMemoryDao())
                 val todoAgent = TodoAgent(todoRepository, longTermMemoryRepository)
                 MainViewModel(
                     application = application,
