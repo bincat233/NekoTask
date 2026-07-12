@@ -1,61 +1,112 @@
-## 项目：NekoTask（~/AndroidStudioProjects/todolist）
+## Project: NekoTask (`~/AndroidStudioProjects/todolist`)
 
-**类型**：Android 应用（Jetpack Compose + Kotlin）
+This file is the agent/developer maintenance guide. It records **how / guardrails / implementation facts**. Product positioning, motivation, and public-facing introduction belong in `README.md`. English project documentation is preferred. If documentation and code disagree, trust the code first, then update stale docs.
 
-**定位**：面向 ADHD 用户的 AI 驱动待办事项应用，猫咪主题，主打低认知负担。
+**Type**: Android app (Jetpack Compose + Kotlin)
 
-**核心功能**：
+**Positioning**: An AI-assisted, ADHD-friendly to-do app with a cat theme, focused on low cognitive load.
 
-- 手动添加任务（Material 3 底部卡片，两步日期/时间选择器，优先级选择）
-- AI 聊天模式（自然语言增删改查任务，支持 peek 气泡与全屏两种模式）
-- AI 子任务拆解（将大任务分解为可执行小步骤）
-- 长期记忆（LongTermMemory 实体，存于 Room 数据库，在 Settings 页管理）
+**Package**: `me.superbear.todolist`
 
-**技术栈**：
+## Current Product Surface
 
-- UI：Jetpack Compose + Material 3，单 Activity（MainActivity）
-- 状态管理：MVI 模式（Event / State / Reducer per section）；MainViewModel 统一协调
-- AI 框架：JetBrains Koog（`ai.koog:agents-core-android`），`AIAgent` + `ToolRegistry`，支持 OpenAI / DeepSeek 多供应商（`MultiLLMPromptExecutor`），底层 HTTP 仍是 Ktor，通过 `KtorKoogHttpClient` 适配进 Koog
-- 数据库：Room v4，表 `tasks` + `long_term_memory`，视图 `unfinished_tasks`
-- AI 客户端：`ChatAgent` 接口（`assistant/ChatAgent.kt`），生产实现 `TodoAgent`（Koog `AIAgent`，工具集 `TaskToolSet` + `MemoryToolSet`），测试假实现 `FakeChatAgent`（仅 androidTest）。`MainViewModel` 构造函数注入 `ChatAgent`，生产装配走 `MainViewModel.Factory`
-- 子任务拆分：`AISubtaskDivider` + `SubtaskDivisionService`，构造函数注入 Koog `PromptExecutor`/`LLModel`（旧的 `TextAssistantClient`/`AssistantClient` 已整体删除）
-- 序列化：kotlinx.serialization；时间：kotlinx.datetime（Instant 存为 Long epoch ms）
-- Firebase AI SDK 已引入依赖（libs.versions.toml），但当前 AI 客户端仍用 OpenAI
+- Manual task creation: Material 3 bottom card, two-step date/time picker, priority selection.
+- Task tree: `parentId` and `orderInParent` represent hierarchy and sibling order.
+- AI chat: natural-language task creation/update/delete/query, with peek bubbles and fullscreen chat.
+- AI subtask division: breaks larger tasks into executable small steps.
+- Long-term memory: `LongTermMemory` stored in Room, managed from Settings, and maintainable by AI tools.
+- Debug sample data: debug wiring seeds examples and exposes a reset option in Settings.
 
-**任务数据模型**（`TaskEntity`）：id、title、content、status(OPEN/DONE)、priority、createdAt、updatedAt、dueAt、parentId（树形结构）、orderInParent
+## Current Implementation Architecture
 
-**配置**：OpenAI API Key 通过 `local.properties` 注入（`openai_key`），`BuildConfig.OPENAI_API_KEY`
+- Entry point: `MainActivity` sets Compose content and renders `MainScreen`.
+- UI: Jetpack Compose + Material 3, single Activity, no Compose Navigation.
+- Main coordination: `MainViewModel` is no longer the whole business object. It wires feature coordinators together, aggregates their state, and routes `AppEvent`.
+- Current coordinators:
+  - `TaskListCoordinator`: task list Flow, task CRUD orchestration, current task snapshot for AI.
+  - `TaskDetailCoordinator`: detail sheet state, debounced title/content writes, deletion, loading markers.
+  - `ManualAddCoordinator`: manual add form and submit flow.
+  - `DateTimePickerCoordinator` / `PriorityCoordinator`: shared transient picker state for manual add and task detail; when detail is visible, selections persist directly to that task.
+  - `ChatCoordinator`: chat message state, peek/fullscreen state, calls into `ChatAgent`.
+  - `SubtaskDivisionCoordinator`: subtask division orchestration, creates `SubtaskDivisionService` on demand.
+  - `LongTermMemoryCoordinator`: long-term memory CRUD and memory list observation.
+  - `SettingsCoordinator`: AI provider/key/model, subtask division preferences, language switching.
+- Root state: `AppState` aggregates section states; `SettingsState` is built separately by combining settings and long-term memory list state.
+- `MainScreen` still owns substantial UI orchestration: drawer page state, mode calculation, overlay/sheet/date picker placement, and event wiring. Before adding complex pages or modes, decide whether state and orchestration should move into a coordinator.
 
-**包名**：`me.superbear.todolist`
+## Data Layer
 
-**当前状态（2026-03-09）**：功能原型，Room 持久化已有，UI 完整，AI 集成可用。
+- Room is the task data source of truth.
+- Database: `AppDatabase`, schema version `4`.
+- Tables: `tasks`, `long_term_memories`.
+- View: `unfinished_tasks`.
+- Task model: `TaskEntity` includes `id`, `title`, `content`, `status`, `priority`, `createdAt`, `updatedAt`, `dueAt`, `parentId`, and `orderInParent`.
+- Domain model: `Task` uses `kotlinx.datetime.Instant`; Room stores times as epoch milliseconds through `InstantConverter`.
+- `TodoRepository.tasks` is the Room Flow; `tasksStateFlow` is a legacy bridge and is still used for UI-friendly snapshot queries.
+- Important: many `TodoRepository` write APIs use `repositoryScope.launch` and are fire-and-forget. When UI needs reliable success/failure, test synchronization, or transactional results, first refactor the relevant API to `suspend` / `Result` instead of pretending the current call is synchronous.
 
----
+## AI Layer
 
-## 开发坑点与经验落盘
+- AI framework: JetBrains Koog (`ai.koog:agents-core-android`).
+- Production implementation: `TodoAgent` implements `ChatAgent`.
+- Providers: OpenAI and DeepSeek, selected through Settings by provider/model/key.
+- Executor: `TodoAgent.buildExecutor()` returns `MultiLLMPromptExecutor`; OpenAI-compatible clients use `KtorKoogHttpClient` to adapt Ktor into Koog.
+- Tools: `TaskToolSet` exposes task create/update/delete/complete tools; `MemoryToolSet` exposes long-term memory add/update/delete/list tools.
+- Prompt context: chat injects `CURRENT_TODO_STATE` plus optional `MEMORY CONTEXT`, and uses `Locale.getDefault().language` to request Chinese or English replies.
+- Guardrail: do not restore the old strict JSON action client. Current action execution is Koog tool calling.
+- `ChatAgent` is currently a wide seam: it handles chat and also exposes provider/model/executor state. If the AI runtime expands further, prefer splitting out a narrower runtime/provider interface.
 
-### 1. 环境与依赖
-- **SDK 版本**：`androidx.lifecycle:2.11.0` 及 `androidx.core:1.19.0` 以上版本强制要求 `compileSdk` 至少为 **37**。若编译报错 AAR Metadata 不匹配，需升级 `build.gradle.kts`。
-- **混合 UI 架构的主题坑**：即便全量使用 Compose，如果 `themes.xml` 继承了 `Theme.Material3.*`（用于支持传统的 Dialog 或系统 UI 渲染），必须显式引入 `com.google.android.material:material` 依赖，否则 AAPT 资源链接会失败。
+## Subtask Division
 
-### 2. 初始化顺序（重要！）
-- **ViewModel 陷阱**：在 Kotlin 中，属性按声明顺序初始化。
-    - **坑点**：如果在 `init { ... }` 块中调用了某个方法（如 `loadTasks()`），而该方法访问了定义在 `init` 之后的属性（如 `_appState`），会导致 `NullPointerException` 闪退。
-    - **经验**：始终将 `MutableStateFlow` 等关键状态属性放在 `init` 块的最上方。
+- Current implementation: `SubtaskDivisionCoordinator` asks the shared `ChatAgent` for the current `PromptExecutor` and `LLModel`, then creates `SubtaskDivisionService` per call.
+- `SubtaskDivisionService` chooses `AISubtaskDivider` or `MockSubtaskDivider` based on config.
+- `AISubtaskDivider` uses a Koog agent with a required tool call to produce structured `SubtaskDivisionResponse`.
+- Settings provides `useAI`, `maxSubtasks`, and `DivisionStrategy`; task detail passes these through `SubtaskDivisionEvent.CreateFromSuggestions`.
+- See `docs/SUBTASK_DIVISION.md` for the module-level notes.
 
-### 3. AI 应用的国际化 (i18n)
-- **UI 文本**：遵循 Android 标准，抽取到 `strings.xml` 和 `values-zh/strings.xml`。
-- **AI 响应对齐**：对于 AI 驱动的应用，仅翻译 UI 是不够的。必须在发送给 AI 的 **System Prompt** 中包含语言指令。
-    - **实现**：通过 `Locale.getDefault().language` 判断当前环境，在 Prompt 结尾追加 `"Please reply in Chinese."` 等指令，确保 AI 回复语言与系统语言一致。
+## Configuration
 
-### 4. 长期记忆 (Long-Term Memory) 机制
-- **实现方案**：Room 数据库存储实体 + 对话前置上下文注入 + Koog 工具调用双通道。
-- **手动通道**：用户在 Settings 页手动增删改，`MainViewModel` 观察 `LongTermMemoryRepository.getAllMemories()` 实时反馈；每次对话前 `getMemoryContextForAI()` 把激活记忆拼成文本块注入 Prompt（`MEMORY CONTEXT` 段）。
-- **AI 自主通道**：参考主流实现（ChatGPT/Claude 的记忆功能都是工具调用模式，非独立提炼 agent），`MemoryToolSet`（`assistant/MemoryToolSet.kt`）暴露 `add_memory`/`update_memory`/`delete_memory`/`list_memories` 给 `TodoAgent` 的 `ToolRegistry`，AI 在对话中可自主判断并调用工具管理记忆，不需要额外的”自动提取” agent。
+- Debug builds can read a default OpenAI key from `local.properties`:
 
-### 5. 示例数据种子 (Sample Data Seeding)
-- **实现**：`SeedManager`（`data/SeedManager.kt`）在数据库为空且未播种过（SharedPreferences `seed_done_v1`）时插入几条硬编码示例任务（”Have Breakfast” 等）。
-- **仅 debug 生效**：`TodoRepository` 的 `seedManager` 是可选的构造参数（默认 `null` = 不播种）。生产装配（`MainViewModel.Factory`）只在 `BuildConfig.DEBUG` 为真时才传入真实 `SeedManager`；release 包和任何手动构造 `TodoRepository(...)` 不传参的场景（比如 androidTest）都不会触发播种，避免真机上跑测试时误写生产数据库。
-- **改示例数据内容后怎么让老安装也刷新**：`SEED_DONE_KEY` 常量带版本号后缀（`seed_done_v1`），改了 `seedWithSampleData()` 里的内容后把 key 后缀改成 `_v2` 即可让已播种过的老安装重新播种一次。
-- **不要做成”每次安装自动清空重来”**：debug 包通常被当成半持久的日常开发环境使用，自动清空会丢掉开发者手动攒的测试数据；如果需要真正的”全新状态”应该走 `adb uninstall`/清除应用数据这类开发者主动操作。
-- **手动重置入口**：Settings 页底部有一个仅 `BuildConfig.DEBUG` 下可见的”开发者选项”卡片（`SettingsScreen.kt` 里的 `DeveloperSection`），点击”重置示例数据”会弹二次确认，确认后调用 `MainViewModel.resetSampleData()` → `TodoRepository.resetSampleData()` → `SeedManager.resetAndReseed()`：删光所有任务、清掉播种标记、重新插入示例数据。
+```properties
+OPENAI_API_KEY=...
+```
+
+- Release builds do not embed the developer key. Users enter their own provider key in Settings.
+- Settings stores provider-prefixed keys in SharedPreferences, for example `openai_api_key`.
+- `OPENAI_BASE_URL` and `OPENAI_MODEL` currently generate BuildConfig fields, but chat runtime behavior is mainly controlled by Settings / `SettingsCoordinator.PROVIDER_INFO`.
+
+## Development Guardrails
+
+- `README.md` describes what and why; avoid volatile internal call chains there. Put implementation details in this file or module docs.
+- New UI text belongs in `strings.xml` and `values-zh/strings.xml`.
+- When adding AI-facing text, also consider language alignment in prompts; UI translation alone is not enough.
+- New task write paths must account for `orderInParent` and sibling reindexing. Do not insert bare tasks without considering order.
+- When deleting a parent task, prefer the recursive deletion path to avoid orphaned subtasks.
+- Changes involving Settings provider/model/key should also check `TodoAgent` and `SubtaskDivisionCoordinator`, because subtask division reuses the current AI runtime.
+- Do not turn debug sample reset into "wipe on every install"; data should be cleared only by explicit developer action, app data clearing, or uninstall.
+- Do not use README's historical roadmap to decide whether a feature exists. Confirm with `rg` and code.
+
+## Known Pitfalls
+
+### Environment And Dependencies
+
+- `androidx.lifecycle:2.11.0` and `androidx.core:1.19.0` or newer require `compileSdk >= 37`.
+- Even with an all-Compose UI, if `themes.xml` inherits from `Theme.Material3.*`, keep `com.google.android.material:material`; otherwise AAPT resource linking may fail.
+
+### Initialization Order
+
+- Kotlin properties initialize in declaration order.
+- Be careful with `MainViewModel` coordinator and `MutableStateFlow` ordering. Do not access a property from `init` before it has been initialized.
+
+### Long-Term Memory
+
+- Long-term memory uses two channels: Room-backed prompt context injection and Koog tool calling.
+- Manual channel: Settings edits memory through `LongTermMemoryCoordinator`.
+- AI channel: `MemoryToolSet` exposes memory tools. No separate automatic extraction agent is needed.
+
+### Sample Data
+
+- `SeedManager` is injected only in debug production wiring. Release builds and tests that construct `TodoRepository` without a `SeedManager` do not seed sample data.
+- The seed marker is `seed_done_v1`; if sample content changes and old installs should reseed, bump the suffix.
+- Settings debug-only developer reset chain: `MainViewModel.resetSampleData()` -> `TodoRepository.resetSampleData()` -> `SeedManager.resetAndReseed()`.

@@ -1,215 +1,80 @@
-# 🐾 NekoTask
+# NekoTask
 
-NekoTask is a playful yet practical **to-do list app with an AI-powered assistant** 🐱.
-It was originally designed to support **people with ADHD** (adults or children, any age) by reducing **cognitive load** in task management — but of course, everyone can use it to stay organized.
+NekoTask is an Android to-do app with an AI assistant, designed around low cognitive load for ADHD-friendly task capture and follow-through.
 
-⚠️ **Important Note**:
-At this stage, **NekoTask is a functional prototype**.
-- Tasks are loaded from a local JSON file (`app/src/main/assets/todolist_items.json`).
-- The AI chat logic is implemented, with both a mock and a real client.
-- The real client requires an OpenAI API key to function.
+The app is currently a functional prototype. It is useful for local development and experimentation, but it is not a medical tool and should not be treated as production-ready.
 
----
+## Screenshots
 
-## ✨ Features
-- **Dual Interaction Modes**
-  - 📝 **Manual Mode**: Add tasks via a clean, minimal bottom card.
-  - 🤖 **AI Chat Mode**: A functional chat interface to add, update, and delete tasks using natural language.
-- **ADHD-Friendly UI Principles**
-  - Minimal, distraction-free interface.
-  - Reduced decision fatigue — AI agent simplifies task entry.
-  - Playful cat theme for motivation.
- - **AI Subtask Decomposition (Core Idea)**
-   - Ask the assistant to break a big task into small actionable subtasks.
-   - Uses a strict JSON action contract to add tasks (optionally referencing a `parentId`).
- - **Due Date Picker (Two-step)**
-   - Material 3 DatePicker + TimePicker with a two-step flow (date → time).
-   - Quick visibility of due-state; button indicates selection.
- - **Chat Overlay Modes**
-   - Peek bubbles over the list, or switch to fullscreen chat.
-   - Pin/auto-dismiss behavior to reduce noise.
- - **AI Notepad (Working-Memory Notes)**
-   - Quick, lightweight notes for facts/clues/context that are not actionable tasks.
-   - Pin important notes; optionally link a note to a task; convert note → task when needed.
-   - Clean separation from the checklist to avoid clutter.
+Images will be added here as the current UI stabilizes.
 
-## 📸 Screenshots
-*(to be added — current UI demo with AI chat + manual add card)*
+| Task List | AI Chat | Settings |
+| --- | --- | --- |
+| _Placeholder_ | _Placeholder_ | _Placeholder_ |
 
-## 🛠️ Tech Stack
-- **Android (Jetpack Compose)**
-- **Kotlin**
-- **Material 3 design**
-- **Ktor** for networking
-- **OpenAI GPT API** integration
- - **kotlinx.serialization** for robust JSON parsing
- - **kotlinx.datetime** for time handling
+## What It Does
 
-## 🔑 Setup
-To use the AI features, you will need to provide your own OpenAI API key.
+- Manual task capture with a compact Material 3 bottom sheet, priority selection, and a two-step date/time picker.
+- Hierarchical tasks and subtasks with completion state, ordering, and progress display.
+- AI chat for natural-language task management, shown either as peek bubbles or a fullscreen overlay.
+- AI subtask division for turning a larger task into smaller executable steps.
+- Long-term memory, stored locally, for persistent assistant context managed from Settings.
+- Debug-only sample data seeding and reset tools for local development.
 
-1.  **Create a `local.properties` file** in the root directory of the project if you don't already have one.
-2.  **Add your OpenAI API key** to the `local.properties` file:
-    ```properties
-    openai_key="YOUR_API_KEY"
-    ```
-3.  **Make sure `local.properties` is in your `.gitignore` file** to prevent your API key from being committed to version control.
+## Why
 
-## 🚧 Current Status
-- ✅ UI for task lists, AI chat bubbles, and manual add card.
-- ✅ Sample cat-themed task data for testing.
-- ✅ Tasks loaded from a local JSON file.
-- ✅ AI backend integration with mock and real clients.
- - ✅ Two-step due date selection (date → time) wired to task creation.
- - ✅ Strict JSON contract for AI responses (say + actions) with parsing and safety checks.
- - ❌ No persistence layer yet (no database; in-memory only).
+Many task apps make users decide too much before they can start. NekoTask aims to keep the default workflow small:
 
----
+- capture quickly,
+- split vague work into concrete steps,
+- keep the main task list scannable,
+- let AI help without replacing direct manual controls.
 
-## 🎯 Why NekoTask?
-Many productivity tools are **overwhelming** — too many buttons, features, and settings.
-For users with ADHD, this can create friction instead of support.
+The cat theme is intentionally lightweight: it should make the app approachable without adding visual noise.
 
-NekoTask’s goal is to:
-- Keep **manual controls minimal**.
-- Provide **AI-assisted task management**.
-- Build a **friendly, motivating environment** with playful design.
- - Turn big, vague tasks into small, executable steps with **AI subtask decomposition**.
+## Current Implementation
 
----
+- UI: Jetpack Compose + Material 3, single `MainActivity`.
+- State: `MainViewModel` coordinates feature-level state and side effects through section coordinators.
+- Data: Room is the source of truth for `tasks` and `long_term_memories`.
+- AI: JetBrains Koog `AIAgent` with tool-based task and memory actions.
+- Providers: OpenAI and DeepSeek are supported through the app's Settings screen.
+- Networking: Ktor is adapted into Koog through `KtorKoogHttpClient`.
+- Time and serialization: `kotlinx.datetime` and `kotlinx.serialization`.
 
-## 💡 Roadmap (Next 10 days focus + beyond)
+Some visible drawer entries, such as Notes and About, are placeholders.
 
-### Near-term (aimed for the current sprint)
-- [ ] Subtasks S1 (in-memory):
-  - `Task` model gains `parentId` (flat storage; UI groups by parent).
-  - Expandable subtasks under each parent with inline add and quick complete.
-  - Parent progress indicator (e.g., 2/5).
-- [ ] AI contract update:
-  - `add_task` supports optional `parentId` for AI-generated subtasks.
-  - Keep strict single-JSON envelope (say + actions) for reliability.
-- [ ] Time presets:
-  - Quick presets like Tonight / Tomorrow / This week alongside the two-step picker.
- - [ ] Configurable AI Persona:
-   - Presets: Neutral (default), Coach, Cheerful Cat, Minimalist.
-   - Persona influences only `say` tone, never `actions` schema.
- - [ ] Energy level (Low/Medium/High):
-   - Simple self-rating chip; drives “next small step” granularity and optional UI contraction (show only next actionable).
- - [ ] Privacy toggle for AI snapshot:
-   - Off by default. When on, send a minimal, non-sensitive task snapshot in a system message.
- - [ ] AI Notepad MVP (in-memory):
-   - New `Note` model and in-memory repository; CRUD + pin/unpin; optional link to `taskId`.
-   - Notepad UI (sheet or screen) and a small pinned preview strip on Home.
-   - Convert note → task (simple UI action); keep notes separate from the checklist.
- - [ ] Chat + Notes integration:
-   - “remember …/记一下 …” maps to `add_note`; retrieval answers appear in `say`.
+## Setup
 
-### Infrastructure
-- [ ] Local persistence with Room (entities/DAOs, v1 schema; replace JSON-only).
-- [ ] Compose Navigation + Task Details screen (edit title/notes/due/priority; manage subtasks).
- - [ ] Room for notes (separate `notes` table) and repository abstraction.
+Open the project in Android Studio or build from the command line with the included Gradle wrapper.
 
-### Assistant & Privacy
- - [ ] Privacy toggle: choose whether to send a current-task snapshot to the AI (with clear copy; default off).
- - [ ] Confirmation gates for destructive actions (bulk delete/complete) and guardrails around overdue bulk ops.
- - [ ] Separate privacy toggle for notes snapshot (default off) with simple redaction.
+For debug builds, you can provide a default OpenAI key in `local.properties`:
 
-### Reminders & Input
- - [ ] Gentle reminders with WorkManager (due and overdue notifications; rate limited, quiet hours friendly).
- - [ ] Focus 20-min mode (Pomodoro-like) with gentle start/stop cues.
- - [ ] In-app voice input for quick add; App Shortcuts for “Quick Add”.
-
-### Later
-- [ ] Accessibility improvements (large touch targets, high contrast, single-hand mode).
-- [ ] Optional light gamification (streaks/stickers) — low-arousal, can be turned off.
-- [ ] Advanced search/filter/sort; calendar views.
-- [ ] Wearable and assistant integrations (Android first).
-
----
-
-## 🤖 AI Contract (Brief)
-The real client sends a system prompt requiring the assistant to reply with a single compact JSON object:
-
-```json
-{
-  "say": "string",
-  "actions": [
-    { "type": "add_task", "title": "string", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123 },
-    { "type": "complete_task", "id": 123 },
-    { "type": "delete_task", "id": 123 },
-    { "type": "update_task", "id": 123, "title": "string?", "notes": "string?", "dueAt": "ISO-8601?", "priority": "LOW|MEDIUM|HIGH|DEFAULT?", "parentId": 123 }
-  ]
-}
+```properties
+OPENAI_API_KEY=your_api_key_here
 ```
 
-Responses are parsed and mapped to app actions. Mock and real clients are both supported.
+Release builds do not compile the developer's API key into the app. Users are expected to enter their own provider key in Settings. AI features require a valid provider key and network access.
 
-### CURRENT_TODO_STATE (Nested)
-The app also sends a nested snapshot of current tasks as a system message. Structure:
+Useful build check:
 
-```json
-{
-  "now": "ISO-8601",
-  "unfinished": [
-    {
-      "id": 1,
-      "title": "Parent Task",
-      "status": "OPEN",
-      "priority": "HIGH",
-      "dueAt": "2025-08-25T10:00:00Z",
-      "children": [
-        { "id": 2, "title": "Child A", "status": "DONE" },
-        { "id": 3, "title": "Child B", "status": "OPEN" }
-      ],
-      "totalChildren": 2,
-      "doneChildren": 1,
-      "progress": 0.5
-    }
-  ],
-  "finished": [
-    { "id": 4, "title": "Completed Parent", "status": "DONE", "children": [] }
-  ],
-  "finished_count": 1
-}
+```bash
+./gradlew :app:compileDebugKotlin
 ```
 
-Rules for the assistant (enforced via the system prompt):
-- Use ids from CURRENT_TODO_STATE at any depth (top-level or nested children).
-- `complete_task`: only for items in the "unfinished" tree (any depth).
-- `delete_task`: allowed for any item in either tree.
-- `add_task`: provide `parentId` to create a subtask; omit to create a top-level task.
-- `update_task`: include `parentId` to reparent under another existing taskd.
-- If ambiguous, ask a clarifying question in `say` and return `"actions": []`.
+## Documentation Split
 
-Note actions (for working-memory notes) extend the same `actions` array without changing the envelope:
+- English documentation is preferred for project-level truth. If English and non-English docs disagree, use the English project docs and the code as the source of truth, then update stale docs.
+- `README.md` explains what the app is and why it exists.
+- `AGENTS.md` is the implementation and maintenance guide for agents and developers.
+- `docs/SUBTASK_DIVISION.md` documents the current subtask division module.
 
-```json
-{
-  "say": "string",
-  "actions": [
-    { "type": "add_note", "text": "string", "taskId": 123, "pinned": true },
-    { "type": "update_note", "id": 1, "text": "string", "pinned": false, "taskId": 123 },
-    { "type": "delete_note", "id": 1 },
-    { "type": "pin_note", "id": 1, "pinned": true }
-  ]
-}
-```
+When the implementation and documentation disagree, treat code as the source of truth and update the docs.
 
----
+## Near-Term Direction
 
-## 🔬 Research Notes (for the dissertation)
-- Primary research questions (examples):
-  - Does AI-assisted subtasking reduce “time-to-start” (time to complete the first subtask)?
-  - Do subtasks + progress visualization improve completion rate and reduce overdue rate?
-  - Does a strict JSON contract increase action reliability (parse success and execution rate)?
-- Suggested metrics:
-  - Parse success rate; action execution success; undo rate.
-  - Start time; completion/overdue rates; clicks per operation.
-  - Short subjective scales (SUS, simplified NASA-TLX).
-- Ethics & privacy:
-  - No medical claims. Use “support level” language, not diagnosis.
-  - Snapshot-to-AI toggle defaults to off; users can opt in.
-
----
-
-> 🎓 *This project is currently developed as part of a Master's dissertation — and because I also live with ADHD and depression, I've taken it personally.*
+- Keep the task flow low-friction and manual-first.
+- Make AI actions more reliable and transparent.
+- Reduce orchestration weight in `MainScreen` as features grow.
+- Tighten repository write APIs where UI needs explicit success or failure.
+- Replace placeholder drawer entries with real features or remove them.
