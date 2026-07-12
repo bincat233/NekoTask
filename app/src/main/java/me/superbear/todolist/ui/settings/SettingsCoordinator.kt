@@ -28,6 +28,8 @@ class SettingsCoordinator(
 ) {
     val PROVIDER_INFO = mapOf(
         LLMProvider.OpenAI to ProviderInfo("OpenAI", "gpt-5-mini", listOf(
+            "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
+            "gpt-5.2", "gpt-5.1",
             "gpt-5", "gpt-5-mini", "gpt-5-nano",
             "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
             "gpt-4o", "gpt-4o-mini",
@@ -76,6 +78,17 @@ class SettingsCoordinator(
             prefs.edit().putString("openai_selected_model", oldModel).remove("selected_model").apply()
         }
 
+        // Debug-only, one-time seed: copy the developer's local.properties test keys into prefs
+        // so debug builds work out of the box, the same way SeedManager seeds sample tasks once.
+        // Runs exactly once, ever (guarded by DEBUG_KEYS_SEEDED_KEY) — after that, loadApiKey()
+        // has no BuildConfig fallback, so explicitly clearing a key in Settings actually sticks
+        // instead of reappearing on the next launch.
+        if (BuildConfig.DEBUG && !prefs.getBoolean(DEBUG_KEYS_SEEDED_KEY, false)) {
+            seedDebugKeyIfBlank(LLMProvider.OpenAI, BuildConfig.OPENAI_API_KEY)
+            seedDebugKeyIfBlank(LLMProvider.DeepSeek, BuildConfig.DEEPSEEK_API_KEY)
+            prefs.edit().putBoolean(DEBUG_KEYS_SEEDED_KEY, true).apply()
+        }
+
         val initialProviderStr = prefs.getString("selected_provider", null)
         val initialProvider = when (initialProviderStr) {
             "openai" -> LLMProvider.OpenAI
@@ -99,8 +112,15 @@ class SettingsCoordinator(
     }
 
     private fun loadApiKey(provider: LLMProvider): String {
-        val key = prefs.getString("${provider.id.lowercase()}_api_key", null)
-        return key?.takeIf { it.isNotBlank() } ?: BuildConfig.OPENAI_API_KEY
+        return prefs.getString("${provider.id.lowercase()}_api_key", null) ?: ""
+    }
+
+    private fun seedDebugKeyIfBlank(provider: LLMProvider, debugKey: String) {
+        if (debugKey.isBlank()) return
+        val prefKey = "${provider.id.lowercase()}_api_key"
+        if (prefs.getString(prefKey, null).isNullOrBlank()) {
+            prefs.edit().putString(prefKey, debugKey).apply()
+        }
     }
 
     private fun loadModel(provider: LLMProvider, info: ProviderInfo = PROVIDER_INFO[provider]!!): String {
@@ -164,5 +184,9 @@ class SettingsCoordinator(
         }
         AppCompatDelegate.setApplicationLocales(appLocale)
         _settingsState.update { it.copy(currentLanguage = languageTag) }
+    }
+
+    companion object {
+        private const val DEBUG_KEYS_SEEDED_KEY = "debug_keys_seeded_v1"
     }
 }

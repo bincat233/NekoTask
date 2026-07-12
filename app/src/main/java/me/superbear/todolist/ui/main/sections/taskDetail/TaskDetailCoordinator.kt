@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.ui.main.sections.logFailure
@@ -60,6 +61,14 @@ class TaskDetailCoordinator(
                         .logFailure("TaskDetailCoordinator", "Failed to update task priority: ${event.taskId}")
                 }
             }
+            is TaskDetailEvent.UpdateDueDate -> {
+                viewModelScope.launch {
+                    val dueAt = event.timestamp?.let { Instant.fromEpochMilliseconds(it) }
+                    val updatedAt = Clock.System.now().toEpochMilliseconds()
+                    todoRepository.updateDueAt(event.taskId, dueAt, updatedAt)
+                        .logFailure("TaskDetailCoordinator", "Failed to update task due date: ${event.taskId}")
+                }
+            }
             is TaskDetailEvent.DeleteTask -> {
                 viewModelScope.launch {
                     val result = todoRepository.deleteTaskRecursively(event.taskId)
@@ -108,9 +117,5 @@ class TaskDetailCoordinator(
     fun getSelectedTask(): Task? {
         val selectedTaskId = _state.value.selectedTaskId ?: return null
         return taskListCoordinator.findTask(selectedTaskId)
-    }
-
-    fun setSubtaskDivisionLoading(loading: Boolean) {
-        _state.update { it.copy(isSubtaskDivisionLoading = loading) }
     }
 }

@@ -8,7 +8,7 @@ object DateTimePickerReducer {
     fun reduce(state: DateTimePickerState, event: DateTimePickerEvent): DateTimePickerState {
         return when (event) {
             is DateTimePickerEvent.Open -> {
-                state.copy(isVisible = true)
+                state.copy(isVisible = true, selectedDueDateMs = event.initialDueDateMs)
             }
             is DateTimePickerEvent.Close -> {
                 state.copy(isVisible = false)

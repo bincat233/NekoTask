@@ -11,5 +11,6 @@ sealed class TaskDetailEvent {
     data class EditTitle(val title: String) : TaskDetailEvent()
     data class EditContent(val content: String) : TaskDetailEvent()
     data class UpdatePriority(val taskId: Long, val priority: Priority) : TaskDetailEvent()
+    data class UpdateDueDate(val taskId: Long, val timestamp: Long?) : TaskDetailEvent()
     data class DeleteTask(val taskId: Long) : TaskDetailEvent()
 }
