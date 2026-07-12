@@ -64,6 +64,12 @@
     <string name="settings_model_select">选择模型</string>
     <string name="settings_model_count_msg">已从 %2$s 获取 %1$d 个可用模型</string>
     <string name="settings_model_fallback_msg">显示内置列表，点击刷新按钮从 %1$s 获取最新模型</string>
+    <string name="settings_search_title">网页搜索</string>
+    <string name="settings_search_select">搜索提供方</string>
+    <string name="settings_search_capability_tavily">Tavily</string>
+    <string name="settings_search_capability_openai_native">OpenAI 原生搜索</string>
+    <string name="settings_search_api_key_label">Tavily API 密钥</string>
+    <string name="settings_search_api_key_hint">密钥仅存储在本机，不会上传到任何服务器</string>
     <string name="settings_ai_division_title">AI子任务划分</string>
     <string name="settings_ai_division_enable">启用AI智能划分</string>
     <string name="settings_ai_division_enable_desc">基于任务内容智能生成子任务</string>

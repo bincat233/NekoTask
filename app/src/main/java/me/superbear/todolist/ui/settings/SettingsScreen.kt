@@ -28,6 +28,8 @@ import androidx.compose.ui.res.stringResource
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.R
 import ai.koog.prompt.llm.LLMProvider
+import me.superbear.todolist.assistant.search.SearchCapabilityKind
+import me.superbear.todolist.assistant.search.isAvailable
 import me.superbear.todolist.assistant.subtask.DivisionStrategy
 import me.superbear.todolist.domain.entities.LongTermMemory
 
@@ -57,7 +59,11 @@ fun SettingsScreen(
     onToggleMemoryActive: (LongTermMemory, Boolean) -> Unit = { _, _ -> },
     onLanguageChange: (String) -> Unit = {},
     providerInfo: Map<LLMProvider, ProviderDisplayInfo> = emptyMap(),
-    onResetSampleData: () -> Unit = {}
+    onResetSampleData: () -> Unit = {},
+    selectedSearchCapability: SearchCapabilityKind = SearchCapabilityKind.TAVILY,
+    onSearchCapabilitySelect: (SearchCapabilityKind) -> Unit = {},
+    searchApiKey: String = "",
+    onSearchApiKeySave: (String) -> Unit = {}
 ) {
     var currentSettings by remember { mutableStateOf(settingsState) }
     
@@ -126,6 +132,15 @@ fun SettingsScreen(
                 onModelSelect = onModelSelect,
                 onRefresh = onRefreshModels,
                 fallbackModels = fallback
+            )
+
+            // 网页搜索设置
+            SearchProviderSection(
+                currentLlmProvider = selectedProvider,
+                selectedCapability = selectedSearchCapability,
+                onCapabilitySelect = onSearchCapabilitySelect,
+                searchApiKey = searchApiKey,
+                onSearchApiKeySave = onSearchApiKeySave
             )
 
             // AI子任务划分设置
@@ -364,6 +379,114 @@ private fun ModelSection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun SearchCapabilityKind.displayName(): String = when (this) {
+    SearchCapabilityKind.TAVILY -> stringResource(R.string.settings_search_capability_tavily)
+    SearchCapabilityKind.OPENAI_NATIVE -> stringResource(R.string.settings_search_capability_openai_native)
+}
+
+/**
+ * Mirrors [ModelSection]'s ExposedDropdownMenuBox interaction pattern (not the same composable —
+ * that one is tightly bound to selectedModel/availableModels/isLoadingModels/onRefresh semantics
+ * that don't fit a static local list). The option list is filtered live by
+ * [SearchCapabilityKind.isAvailable] against the current chat LLM provider, so e.g. "OpenAI 原生搜索"
+ * disappears whenever DeepSeek is selected instead of being shown as a choice that can't work.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchProviderSection(
+    currentLlmProvider: LLMProvider,
+    selectedCapability: SearchCapabilityKind,
+    onCapabilitySelect: (SearchCapabilityKind) -> Unit,
+    searchApiKey: String,
+    onSearchApiKeySave: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val availableCapabilities = SearchCapabilityKind.entries.filter { it.isAvailable(currentLlmProvider) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(stringResource(R.string.settings_search_title), style = MaterialTheme.typography.titleMedium)
+
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                OutlinedTextField(
+                    value = selectedCapability.displayName(),
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    label = { Text(stringResource(R.string.settings_search_select)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    availableCapabilities.forEach { capability ->
+                        DropdownMenuItem(
+                            text = { Text(capability.displayName()) },
+                            onClick = {
+                                onCapabilitySelect(capability)
+                                expanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                }
+            }
+
+            if (selectedCapability == SearchCapabilityKind.TAVILY) {
+                var draft by remember(searchApiKey) { mutableStateOf(searchApiKey) }
+                var visible by remember { mutableStateOf(false) }
+                val changed = draft.trim() != searchApiKey.trim() && draft.isNotBlank()
+
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.settings_search_api_key_label)) },
+                    singleLine = true,
+                    visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { visible = !visible }) {
+                            Icon(
+                                imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (visible) stringResource(R.string.hide) else stringResource(R.string.show)
+                            )
+                        }
+                    }
+                )
+
+                Text(
+                    text = stringResource(R.string.settings_search_api_key_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Button(
+                    onClick = { onSearchApiKeySave(draft) },
+                    enabled = changed,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(stringResource(R.string.save))
+                }
+            }
         }
     }
 }

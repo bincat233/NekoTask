@@ -46,6 +46,7 @@ android {
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
             buildConfigField("String", "OPENAI_MODEL", "\"${localProperties.getProperty("OPENAI_MODEL") ?: "gpt-4.1-mini"}\"")
             buildConfigField("String", "DEEPSEEK_API_KEY", "\"\"")
+            buildConfigField("String", "TAVILY_API_KEY", "\"\"")
             // Controls whether to force no blur fallback even on supported versions
             buildConfigField("boolean", "DEBUG_FORCE_NO_BLUR_FALLBACK", "false")
             // Peek timeout debug flags
@@ -59,6 +60,7 @@ android {
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
             buildConfigField("String", "OPENAI_MODEL", "\"${localProperties.getProperty("OPENAI_MODEL") ?: "gpt-4.1-mini"}\"")
             buildConfigField("String", "DEEPSEEK_API_KEY", "\"${localProperties.getProperty("DEEPSEEK_API_KEY") ?: ""}\"")
+            buildConfigField("String", "TAVILY_API_KEY", "\"${localProperties.getProperty("TAVILY_API_KEY") ?: ""}\"")
             buildConfigField("boolean", "FORCE_DELETE_DB", "true")
             // Controls whether to force no blur fallback even on supported versions
             buildConfigField("boolean", "DEBUG_FORCE_NO_BLUR_FALLBACK", "false")
@@ -103,6 +105,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     testImplementation(libs.junit)
+    testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

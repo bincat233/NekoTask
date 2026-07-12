@@ -33,6 +33,10 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import me.superbear.todolist.assistant.search.SearchCapability
+import me.superbear.todolist.assistant.search.SearchCapabilityKind
+import me.superbear.todolist.assistant.search.TavilySearchProvider
+import me.superbear.todolist.assistant.search.isAvailable
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.data.repository.LongTermMemoryRepository
 import me.superbear.todolist.domain.entities.ChatMessage
@@ -41,7 +45,7 @@ import me.superbear.todolist.domain.entities.Sender
 class TodoAgent(
     private val repository: TodoRepository,
     private val memoryRepository: LongTermMemoryRepository
-) : ChatAgent, LlmRuntime {
+) : ChatAgent, LlmRuntime, SearchRuntime {
 
     companion object {
         // Koog ships no built-in model catalog for DeepSeek (it's routed through OpenAILLMClient
@@ -71,6 +75,12 @@ class TodoAgent(
 
     private val taskToolSet = TaskToolSet(repository)
     private val memoryToolSet = MemoryToolSet(memoryRepository)
+
+    // Only one ExternalApi provider exists today (Tavily), so key updates always target this
+    // instance directly. If a second provider is added, setSearchApiKey will need to become
+    // provider-aware (e.g. keyed by which provider is currently selected) — not needed yet.
+    private val tavilyProvider = TavilySearchProvider()
+    private var searchCapabilityKind: SearchCapabilityKind = SearchCapabilityKind.TAVILY
 
     private val baseSystemPrompt = """
 You are a helpful assistant for a to-do list app.
@@ -130,12 +140,43 @@ Don't save trivial or one-off details.
         val langDirective = if (language.startsWith("zh")) "Please reply in Chinese." else "Please reply in English."
         val strategy = if (streaming) streamingSingleRunStrategy() else singleRunStrategy()
 
+        // Re-checked here, not just in Settings: persisted state can go stale if the LLM provider
+        // changes elsewhere without revisiting search settings.
+        val searchAvailable = searchCapabilityKind.isAvailable(selectedProvider)
+        val searchCapability: SearchCapability? = if (!searchAvailable) {
+            null
+        } else {
+            when (searchCapabilityKind) {
+                SearchCapabilityKind.TAVILY -> SearchCapability.ExternalApi(tavilyProvider)
+                SearchCapabilityKind.OPENAI_NATIVE -> SearchCapability.OpenAiNativeSearch
+            }
+        }
+        val searchToolSet = when (searchCapability) {
+            is SearchCapability.ExternalApi -> SearchToolSet(searchCapability.provider)
+            // Stubbed: needs OpenAIResponsesParams + a declared hosted web_search tool, plus
+            // verifying whether Koog surfaces WebSearchToolCall as a visible tool-call event.
+            // See docs/AI_TASK_TOOLS.md "已知后续工作".
+            SearchCapability.OpenAiNativeSearch, null -> null
+        }
+        val searchGuidance = if (searchToolSet != null) {
+            "\nYou also have a web_search tool for looking up current information the user asks " +
+                "about (e.g. facts, news, prices) that isn't already in CURRENT_TODO_STATE or memory " +
+                "context. Use it when the user's request needs real-world/current information; " +
+                "don't reach for it while just managing tasks."
+        } else {
+            ""
+        }
+
         return AIAgent(
             promptExecutor = buildExecutor(),
             llmModel = selectedModel,
             strategy = strategy,
-            systemPrompt = "$baseSystemPrompt\n$langDirective",
-            toolRegistry = ToolRegistry { tools(taskToolSet); tools(memoryToolSet) },
+            systemPrompt = "$baseSystemPrompt$searchGuidance\n$langDirective",
+            toolRegistry = ToolRegistry {
+                tools(taskToolSet)
+                tools(memoryToolSet)
+                searchToolSet?.let { tools(it) }
+            },
             maxIterations = 5,
             installFeatures = {
                 if (streaming) {
@@ -305,6 +346,14 @@ Don't save trivial or one-off details.
     }
 
     override fun getCurrentModel(): LLModel = selectedModel
+
+    override fun setSearchCapability(kind: SearchCapabilityKind) {
+        searchCapabilityKind = kind
+    }
+
+    override fun setSearchApiKey(key: String) {
+        tavilyProvider.setApiKey(key)
+    }
 
     override suspend fun chat(
         userMessage: String,

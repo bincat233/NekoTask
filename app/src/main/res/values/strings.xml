@@ -64,6 +64,12 @@
     <string name="settings_model_select">Select Model</string>
     <string name="settings_model_count_msg">Fetched %1$d available models from %2$s</string>
     <string name="settings_model_fallback_msg">Showing built-in list, click refresh to fetch latest models from %1$s</string>
+    <string name="settings_search_title">Web Search</string>
+    <string name="settings_search_select">Search Provider</string>
+    <string name="settings_search_capability_tavily">Tavily</string>
+    <string name="settings_search_capability_openai_native">OpenAI Native Search</string>
+    <string name="settings_search_api_key_label">Tavily API Key</string>
+    <string name="settings_search_api_key_hint">Keys are stored locally and never uploaded to any server</string>
     <string name="settings_ai_division_title">AI Subtask Division</string>
     <string name="settings_ai_division_enable">Enable AI intelligent division</string>
     <string name="settings_ai_division_enable_desc">Intelligently generate subtasks based on task content</string>

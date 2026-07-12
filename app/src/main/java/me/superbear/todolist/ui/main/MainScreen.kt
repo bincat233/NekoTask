@@ -67,6 +67,8 @@ fun MainScreen(
     val selectedModel by viewModel.selectedModel.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
     val isLoadingModels by viewModel.isLoadingModels.collectAsState()
+    val selectedSearchCapability by viewModel.selectedSearchCapability.collectAsState()
+    val currentSearchApiKey by viewModel.currentSearchApiKey.collectAsState()
     val onEvent = viewModel::onEvent
     val localDensity = LocalDensity.current
     
@@ -323,7 +325,11 @@ fun MainScreen(
                             onEvent(MainScreenIntent.ToggleMemoryActive(memory, isActive))
                         },
                         onLanguageChange = viewModel::updateLanguage,
-                        onResetSampleData = viewModel::resetSampleData
+                        onResetSampleData = viewModel::resetSampleData,
+                        selectedSearchCapability = selectedSearchCapability,
+                        onSearchCapabilitySelect = viewModel::setSearchCapability,
+                        searchApiKey = currentSearchApiKey,
+                        onSearchApiKeySave = viewModel::setSearchApiKey
                     )
                 }
             }

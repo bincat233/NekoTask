@@ -19,7 +19,9 @@ import ai.koog.prompt.llm.LLMProvider
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.assistant.ChatAgent
 import me.superbear.todolist.assistant.LlmRuntime
+import me.superbear.todolist.assistant.SearchRuntime
 import me.superbear.todolist.assistant.TodoAgent
+import me.superbear.todolist.assistant.search.SearchCapabilityKind
 import me.superbear.todolist.data.SeedManager
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.domain.entities.Task
@@ -64,14 +66,15 @@ class MainViewModel(
     private val todoRepository: TodoRepository,
     private val longTermMemoryRepository: LongTermMemoryRepository,
     private val chatAgent: ChatAgent,
-    private val llmRuntime: LlmRuntime
+    private val llmRuntime: LlmRuntime,
+    private val searchRuntime: SearchRuntime
 ) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
 
     // Coordinators are declared in dependency order - each may only depend on ones declared above it.
     private val appShellCoordinator = AppShellCoordinator()
     private val longTermMemoryCoordinator = LongTermMemoryCoordinator(longTermMemoryRepository, viewModelScope)
-    private val settingsCoordinator = SettingsCoordinator(prefs, llmRuntime)
+    private val settingsCoordinator = SettingsCoordinator(prefs, llmRuntime, searchRuntime)
     private val taskListCoordinator = TaskListCoordinator(todoRepository, viewModelScope)
     private val taskDetailCoordinator = TaskDetailCoordinator(todoRepository, taskListCoordinator, viewModelScope)
     private val dateTimePickerCoordinator = DateTimePickerCoordinator(viewModelScope)
@@ -97,6 +100,10 @@ class MainViewModel(
     fun refreshModels() = settingsCoordinator.refreshModels()
     fun updateSettings(settings: SettingsState) = settingsCoordinator.updateSettings(settings)
     fun updateLanguage(languageTag: String) = settingsCoordinator.updateLanguage(languageTag)
+    val selectedSearchCapability: StateFlow<SearchCapabilityKind> get() = settingsCoordinator.selectedSearchCapability
+    val currentSearchApiKey: StateFlow<String> get() = settingsCoordinator.currentSearchApiKey
+    fun setSearchCapability(kind: SearchCapabilityKind) = settingsCoordinator.setSearchCapability(kind)
+    fun setSearchApiKey(key: String) = settingsCoordinator.setSearchApiKey(key)
 
     val settingsState: StateFlow<SettingsState> = combine(
         settingsCoordinator.settingsState,
@@ -296,7 +303,8 @@ class MainViewModel(
                     todoRepository = todoRepository,
                     longTermMemoryRepository = longTermMemoryRepository,
                     chatAgent = todoAgent,
-                    llmRuntime = todoAgent
+                    llmRuntime = todoAgent,
+                    searchRuntime = todoAgent
                 )
             }
         }

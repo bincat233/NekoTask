@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.assistant.LlmRuntime
+import me.superbear.todolist.assistant.SearchRuntime
+import me.superbear.todolist.assistant.search.SearchCapabilityKind
 import me.superbear.todolist.assistant.subtask.DivisionStrategy
 
 data class ProviderInfo(
@@ -24,7 +26,8 @@ data class ProviderInfo(
  */
 class SettingsCoordinator(
     private val prefs: SharedPreferences,
-    private val llmRuntime: LlmRuntime
+    private val llmRuntime: LlmRuntime,
+    private val searchRuntime: SearchRuntime
 ) {
     val PROVIDER_INFO = mapOf(
         LLMProvider.OpenAI to ProviderInfo("OpenAI", "gpt-5-mini", listOf(
@@ -54,6 +57,12 @@ class SettingsCoordinator(
 
     private val _isLoadingModels = MutableStateFlow(false)
     val isLoadingModels: StateFlow<Boolean> = _isLoadingModels.asStateFlow()
+
+    private val _selectedSearchCapability = MutableStateFlow(SearchCapabilityKind.TAVILY)
+    val selectedSearchCapability: StateFlow<SearchCapabilityKind> = _selectedSearchCapability.asStateFlow()
+
+    private val _currentSearchApiKey = MutableStateFlow("")
+    val currentSearchApiKey: StateFlow<String> = _currentSearchApiKey.asStateFlow()
 
     private val _settingsState = MutableStateFlow(
         SettingsState(
@@ -86,6 +95,7 @@ class SettingsCoordinator(
         if (BuildConfig.DEBUG && !prefs.getBoolean(DEBUG_KEYS_SEEDED_KEY, false)) {
             seedDebugKeyIfBlank(LLMProvider.OpenAI, BuildConfig.OPENAI_API_KEY)
             seedDebugKeyIfBlank(LLMProvider.DeepSeek, BuildConfig.DEEPSEEK_API_KEY)
+            seedDebugKeyIfBlank(SEARCH_API_KEY_PREF, BuildConfig.TAVILY_API_KEY)
             prefs.edit().putBoolean(DEBUG_KEYS_SEEDED_KEY, true).apply()
         }
 
@@ -109,6 +119,13 @@ class SettingsCoordinator(
         _selectedModel.value = initialModel
 
         refreshModels()
+
+        val initialSearchCapability = loadSearchCapability()
+        val initialSearchKey = loadSearchApiKey()
+        searchRuntime.setSearchCapability(initialSearchCapability)
+        searchRuntime.setSearchApiKey(initialSearchKey)
+        _selectedSearchCapability.value = initialSearchCapability
+        _currentSearchApiKey.value = initialSearchKey
     }
 
     private fun loadApiKey(provider: LLMProvider): String {
@@ -116,11 +133,24 @@ class SettingsCoordinator(
     }
 
     private fun seedDebugKeyIfBlank(provider: LLMProvider, debugKey: String) {
+        seedDebugKeyIfBlank(prefKey = "${provider.id.lowercase()}_api_key", debugKey = debugKey)
+    }
+
+    private fun seedDebugKeyIfBlank(prefKey: String, debugKey: String) {
         if (debugKey.isBlank()) return
-        val prefKey = "${provider.id.lowercase()}_api_key"
         if (prefs.getString(prefKey, null).isNullOrBlank()) {
             prefs.edit().putString(prefKey, debugKey).apply()
         }
+    }
+
+    private fun loadSearchApiKey(): String {
+        return prefs.getString(SEARCH_API_KEY_PREF, null) ?: ""
+    }
+
+    private fun loadSearchCapability(): SearchCapabilityKind {
+        return prefs.getString(SEARCH_CAPABILITY_PREF, null)
+            ?.let { runCatching { SearchCapabilityKind.valueOf(it) }.getOrNull() }
+            ?: SearchCapabilityKind.TAVILY
     }
 
     private fun loadModel(provider: LLMProvider, info: ProviderInfo = PROVIDER_INFO[provider]!!): String {
@@ -167,6 +197,19 @@ class SettingsCoordinator(
         }
     }
 
+    fun setSearchCapability(kind: SearchCapabilityKind) {
+        prefs.edit().putString(SEARCH_CAPABILITY_PREF, kind.name).apply()
+        searchRuntime.setSearchCapability(kind)
+        _selectedSearchCapability.value = kind
+    }
+
+    fun setSearchApiKey(key: String) {
+        val trimmed = key.trim()
+        prefs.edit().putString(SEARCH_API_KEY_PREF, trimmed).apply()
+        searchRuntime.setSearchApiKey(trimmed)
+        _currentSearchApiKey.value = trimmed
+    }
+
     fun updateSettings(settings: SettingsState) {
         prefs.edit()
             .putBoolean("settings_use_ai", settings.useAI)
@@ -188,5 +231,7 @@ class SettingsCoordinator(
 
     companion object {
         private const val DEBUG_KEYS_SEEDED_KEY = "debug_keys_seeded_v1"
+        private const val SEARCH_API_KEY_PREF = "tavily_api_key"
+        private const val SEARCH_CAPABILITY_PREF = "search_capability_kind"
     }
 }
