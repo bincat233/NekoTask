@@ -47,10 +47,10 @@ fun ChatBubble(
         color = color,
         shadowElevation = 4.dp
     ) {
-        Text(
-            text = text,
+        dev.jeziellago.compose.markdowntext.MarkdownText(
+            markdown = text,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            color = textColor
+            style = MaterialTheme.typography.bodyLarge.copy(color = textColor)
         )
     }
 }
