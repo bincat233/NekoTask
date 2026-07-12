@@ -53,3 +53,30 @@ Internal control flow in `TaskToolSet` depends on external LLM tool string proto
 - Workflow deep module (`SubtaskDivisionCoordinator` manages own `SubtaskDivisionState`).
 - `TodoRepository` exposes `addDetailedSubtasks` for atomic batch insert.
 - UI observes module's state.
+
+---
+
+## Phase 4: Package Hygiene (Identified 2026-07-13, not yet started)
+
+Follow-up review found the `assistant` and `ui.settings` packages drifting from the conventions the earlier phases established. These are lower risk than Phases 1–3 (no behavior change), so they can be picked up independently and in any order.
+
+## 6. Consolidate the `search` feature into its own subpackage
+**Current:** `assistant/search/` holds `SearchCapability`, `SearchProvider`, `TavilySearchProvider`, but `SearchRuntime.kt` and `SearchToolSet.kt` — part of the same feature — sit flat in `assistant/`. This breaks the precedent set by `subtask/`, where every class for that feature (divider, config, request/response, service) lives inside the subpackage.
+
+- **Goal**: One subpackage per feature under `assistant/`, no exceptions.
+- **Implementation**: Move `SearchRuntime.kt` and `SearchToolSet.kt` into `assistant/search/`; move the matching test file into `test/.../assistant/search/` alongside the existing search tests.
+- **Benefits**: A new contributor can find all search-related code in one place instead of splitting attention between `assistant/` and `assistant/search/`.
+
+## 7. Remove stray empty package directories
+**Current:** `assistant/dto`, `assistant/mappers`, and `assistant/snapshot` exist as empty directories, left over from an earlier refactor.
+
+- **Goal**: No directories that imply structure that doesn't exist.
+- **Implementation**: Delete the three empty directories.
+- **Benefits**: Removes a small but real source of confusion — an empty `dto/` or `mappers/` package reads as "there should be code here" and can misdirect where new code gets added.
+
+## 8. Split `ui/settings/SettingsScreen.kt`
+**Current:** `SettingsScreen.kt` is 954 lines, the largest file in the project, and `ui/settings/` doesn't follow the `ui/main/sections/*` convention (a Coordinator + State + dedicated subpackage per concern) used everywhere else in the UI layer.
+
+- **Goal**: Deepen the settings module the same way Phase 1–3 deepened the root screen and pickers.
+- **Implementation**: Extract composables by concern (e.g. provider/model/key configuration, long-term memory management, developer/debug options) into `ui/settings/sections/<name>/` subpackages. Keep `SettingsCoordinator` as the top-level entry point that composes them, mirroring `AppShellCoordinator`.
+- **Benefits**: Consistent structure across the app, smaller files that are easier to review, and less risk of one file becoming an unreviewable diff magnet as settings grow.

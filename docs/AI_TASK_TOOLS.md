@@ -8,8 +8,9 @@
 
 - `TaskToolSet`:任务 CRUD、批量操作、checklist 子任务树。持有 `TodoRepository`。
 - `MemoryToolSet`:长期记忆 CRUD。持有 `LongTermMemoryRepository`。
-- `TodoAgent`:把两个 ToolSet 注册进 `ToolRegistry`,`baseSystemPrompt` 里写高层调用规则,
-  细节规则留在各工具的 `@LLMDescription` 里。
+- `SearchToolSet`:联网搜索(`web_search`)。持有一个 `SearchProvider`(v1 只有 `TavilySearchProvider`)。
+- `TodoAgent`:把 ToolSet 注册进 `ToolRegistry`(`SearchToolSet` 只在 `SearchCapabilityKind.isAvailable`
+  为真时才注册,见下),`baseSystemPrompt` 里写高层调用规则,细节规则留在各工具的 `@LLMDescription` 里。
 
 ## 任务工具清单(`TaskToolSet`)
 
@@ -30,6 +31,23 @@
 
 `add_memory` / `update_memory` / `delete_memory` / `list_memories`——CRUD 长期记忆,category 限定在
 `general/preferences/work_habits/project_info/personal/context` 六类,不认识的归到 `general`。
+
+## 搜索工具(`SearchToolSet`)
+
+| 工具 | 用途 | 备注 |
+|---|---|---|
+| `web_search` | 联网搜索一个 query,最多返回 10 条 | 返回 `SearchResponse` JSON(`{query, results, error}`),`results[].id` 是结果在列表里的 1-based 位置,供模型引用来源 |
+
+- `SearchCapabilityKind`(`TAVILY`/`OPENAI_NATIVE`)是流经 Settings/持久化/UI 的轻量标识符;
+  `SearchCapability`(密封类型,`ExternalApi(provider)`/`OpenAiNativeSearch`)是 `TodoAgent` 内部
+  才用的执行期表示,由 `TodoAgent` 自己把 kind 解析成真正的 provider 实例——这个拆分是因为
+  `SettingsCoordinator` 不持有任何 `SearchProvider` 实例,没法直接构造出一个合法的
+  `SearchCapability.ExternalApi(...)` 值。
+- `SearchCapabilityKind.isAvailable(currentLlmProvider)` 是唯一的可用性判断,Settings 下拉列表
+  过滤和 `TodoAgent.buildAgent()` 里的防御性二次检查都调这一个函数,避免两处判断逻辑各写一份、
+  以后改一处忘了改另一处。
+- `OPENAI_NATIVE` 目前是 stub——选中后 `web_search` 工具不会被注册,系统提示也不会提它,详见下面
+  "已知后续工作"第 4 条。
 
 ## 批量操作:`BatchResult`
 
@@ -91,3 +109,19 @@
      目前没有对应字段,这是模型层面的新功能而不是协议层面的缺口。以后要加,协议设计上可以直接
      抄这次已经验证过的两个模式:字符串 sentinel(清空用字面量,参考 `update_task` 的 `"remove"`)
      和枚举而非数字的优先级/状态字段(避免数字歧义)。
+4. **`web_search` 工具(联网搜索,注意跟上面第 3 条"任务列表 search/filter"是两回事)**:
+   `SearchToolSet`/`TavilySearchProvider`/`SearchCapabilityKind` 已实现,v1 只接了 Tavily 一家。
+   - **实现 `OPENAI_NATIVE`(目前是 stub)**:需要在 `TodoAgent.kt` 里构造 `OpenAIResponsesParams`
+     并在 tools 数组里声明托管的 `{"type": "web_search"}` 工具(现状从不显式构造自定义
+     `LLMParams`,需要改造)。更重要的是要实测验证:Koog 的 `AIAgent` 事件管线会不会把
+     `WebSearchToolCall`(`OpenAIResponsesAPI.kt` 里已经建模的 wire 类型)当成跟 `ToolRegistry`
+     里注册的工具一样、触发一次可见的 tool-call 事件——如果验证下来是不可见的(跟 Chat
+     Completions 那条路径一样只在 `annotations` 里悄悄出现),要重新权衡这个功能是否值得做,
+     还是继续只用 Tavily。
+   - **加更多 `ExternalApi` provider**(Brave/SearXNG/Exa/Jina/Firecrawl):架构已经支持,每个只是
+     新增一个实现 `SearchProvider` 接口的小类 + 在 `SearchCapabilityKind` 里加一个新枚举值 +
+     Settings 下拉里多一行,不需要动 `SearchToolSet`/`TodoAgent` 的分支逻辑。
+   - **Anthropic/Gemini 原生搜索**:这两家各自有自己的托管搜索机制(Claude 的
+     `web_search_20250305` 工具类型、Gemini 的 Search grounding),但这个 app 现在只接了
+     OpenAI/DeepSeek 两个 LLM provider,等以后真的把 Anthropic/Gemini 接成可选的聊天 provider
+     之后,再各自加一个 `SearchCapabilityKind` 枚举值 + `isAvailable` 分支,现在做不了。
