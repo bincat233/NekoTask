@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -36,7 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
@@ -67,6 +67,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
+import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.R
 import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
@@ -122,71 +124,71 @@ fun TaskDetailSheet(
             modifier = modifier,
         ) {
             // ── 区域 A：可滚动内容区 ──────────────────────────────────
-            // weight(1f, fill=false)：在父 ColumnScope（面板高度有界）中
-            //   占据除 Toolbar 之外的剩余空间，让 Toolbar 始终贴底。
-            // fill=false：内容不足时不强制撑满，面板自然收缩。
-            // verticalScroll：内容超出面板高度时可向上滚动。
-            Column(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp)
-            ) {
-                Spacer(modifier = Modifier.height(8.dp))
+                // weight(1f, fill=false)：在父 ColumnScope（面板高度有界）中
+                //   占据除 Toolbar 之外的剩余空间，让 Toolbar 始终贴底。
+                // fill=false：内容不足时不强制撑满，面板自然收缩。
+                // verticalScroll：内容超出面板高度时可向上滚动。
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                // 顶部信息行：完成复选框 + 截止日期 + 优先级旗标
-                HeaderSection(
+                    // 顶部信息行：完成复选框 + 截止日期 + 优先级旗标
+                    HeaderSection(
+                        task = task,
+                        onToggleDone = onToggleDone,
+                        onChangeDue = onChangeDue,
+                        onChangePriority = onChangePriority
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 任务标题输入框（单行）
+                    TitleSection(
+                        title = title,
+                        onTitleChange = onTitleChange
+                    )
+
+                    if (subtasks.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        // 子任务列表（可逐行编辑）
+                        SubtasksSection(
+                            subtasks = subtasks,
+                            onToggleSubtask = onToggleSubtask,
+                            onEditSubtaskTitle = onEditSubtaskTitle,
+                            onAddSubtask = onAddSubtask,
+                            onDeleteSubtask = onDeleteSubtask
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 任务详情/备注输入框（多行）
+                    ContentSection(
+                        content = content,
+                        onContentChange = onContentChange
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                // ── 区域 B：操作工具栏（固定在面板底部）────────────────────
+                // 位于可滚动区域之外，不会随内容滚动而消失。
+                TaskDetailToolbar(
                     task = task,
                     onToggleDone = onToggleDone,
                     onChangeDue = onChangeDue,
-                    onChangePriority = onChangePriority
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 任务标题输入框（单行）
-                TitleSection(
-                    title = title,
-                    onTitleChange = onTitleChange
-                )
-
-                if (subtasks.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    // 子任务列表（可逐行编辑）
-                    SubtasksSection(
-                        subtasks = subtasks,
-                        onToggleSubtask = onToggleSubtask,
-                        onEditSubtaskTitle = onEditSubtaskTitle,
-                        onAddSubtask = onAddSubtask,
-                        onDeleteSubtask = onDeleteSubtask
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 任务详情/备注输入框（多行）
-                ContentSection(
-                    content = content,
-                    onContentChange = onContentChange
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // ── 区域 B：操作工具栏（固定在面板底部）────────────────────
-            // 位于可滚动区域之外，不会随内容滚动而消失。
-            TaskDetailToolbar(
-                task = task,
-                onToggleDone = onToggleDone,
-                onChangeDue = onChangeDue,
-                onChangePriority = onChangePriority,
-                onAddSubtask = onAddSubtask,
-                onDivideSubtasks = onDivideSubtasks,
-                onDeleteTask = onDeleteTask,
-                isSubtaskDivisionLoading = isSubtaskDivisionLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    onChangePriority = onChangePriority,
+                    onAddSubtask = onAddSubtask,
+                    onDivideSubtasks = onDivideSubtasks,
+                    onDeleteTask = onDeleteTask,
+                    isSubtaskDivisionLoading = isSubtaskDivisionLoading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
             )
         }
     }
@@ -227,7 +229,7 @@ private fun HeaderSection(
             checkmarkColor = Color.White
         )
 
-        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides DpSize.Zero) {
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
             Checkbox(
                 checked = task.status == TaskStatus.DONE,
                 onCheckedChange = { onToggleDone(task, it) },
@@ -284,7 +286,7 @@ private fun DueChip(
     ) {
         Icon(
             imageVector = Icons.Default.CalendarToday,
-            contentDescription = "Due date",
+            contentDescription = stringResource(R.string.due_date),
             modifier = Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -295,7 +297,7 @@ private fun DueChip(
             text = if (dueAt != null) {
                 formatDueDate(dueAt)
             } else {
-                "No due date"
+                stringResource(R.string.task_detail_no_due_date)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -321,7 +323,7 @@ private fun PriorityFlag(
     IconButton(onClick = onClick, modifier = modifier) {
         Icon(
             imageVector = Icons.Default.Flag,
-            contentDescription = "Priority",
+            contentDescription = stringResource(R.string.task_detail_priority),
             tint = priorityTint
         )
     }
@@ -349,7 +351,7 @@ private fun PriorityDropdown(
                             tint = Color(0xFFE53935)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("High")
+                        Text(stringResource(R.string.priority_high))
                     }
                 },
                 onClick = { onPrioritySelected(Priority.HIGH) }
@@ -363,7 +365,7 @@ private fun PriorityDropdown(
                             tint = Color(0xFFFFA000)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Medium")
+                        Text(stringResource(R.string.priority_medium))
                     }
                 },
                 onClick = { onPrioritySelected(Priority.MEDIUM) }
@@ -377,7 +379,7 @@ private fun PriorityDropdown(
                             tint = Color(0xFF43A047)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Low")
+                        Text(stringResource(R.string.priority_low))
                     }
                 },
                 onClick = { onPrioritySelected(Priority.LOW) }
@@ -391,7 +393,7 @@ private fun PriorityDropdown(
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("None")
+                        Text(stringResource(R.string.priority_none))
                     }
                 },
                 onClick = { onPrioritySelected(Priority.DEFAULT) }
@@ -414,32 +416,22 @@ private fun TitleSection(
 ) {
     val focusManager = LocalFocusManager.current
 
-    TextField(
+    BasicTextField(
         value = title,
         onValueChange = onTitleChange,
-        placeholder = { Text("Title") },
-        textStyle = MaterialTheme.typography.titleLarge,
+        textStyle = MaterialTheme.typography.titleLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface
+        ),
         singleLine = true,
-        maxLines = 1,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-            disabledContainerColor = Color.Transparent,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            disabledIndicatorColor = Color.Transparent
-        ),
-        keyboardOptions = KeyboardOptions(
-            imeAction = ImeAction.Done
-        ),
-        keyboardActions = KeyboardActions(
-            onDone = {
-                focusManager.clearFocus()
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+        modifier = modifier,
+        decorationBox = { innerTextField ->
+            if (title.isEmpty()) {
+                Text(stringResource(R.string.task_detail_title_placeholder), style = MaterialTheme.typography.titleLarge, color = Color.Gray)
             }
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp)
+            innerTextField()
+        }
     )
 }
 
@@ -454,31 +446,22 @@ private fun ContentSection(
 ) {
     val focusManager = LocalFocusManager.current
 
-    TextField(
-            value = content,
-            onValueChange = onContentChange,
-            placeholder = { Text("Add details…") },
-            textStyle = MaterialTheme.typography.bodyLarge,
-            minLines = 3,
-            maxLines = 12,
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                disabledContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent
-            ),
-            keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.Default
-            ),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    focusManager.clearFocus()
-                }
-            ),
-            modifier = modifier.fillMaxWidth()
-        )
+    BasicTextField(
+        value = content,
+        onValueChange = onContentChange,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface
+        ),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+        modifier = modifier.fillMaxWidth(),
+        decorationBox = { innerTextField ->
+            if (content.isEmpty()) {
+                Text(stringResource(R.string.task_detail_content_placeholder), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            innerTextField()
+        }
+    )
 }
 
 
@@ -541,7 +524,7 @@ fun TaskDetailToolbar(
             } else {
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = "AI Subtask Division",
+                    contentDescription = stringResource(R.string.task_detail_ai_divide),
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
@@ -567,7 +550,7 @@ fun TaskDetailToolbar(
         ) {
             Icon(
                 imageVector = Icons.Default.Menu,
-                contentDescription = "Add subtask",
+                contentDescription = stringResource(R.string.task_detail_add_subtask),
                 tint = MaterialTheme.colorScheme.onSecondary
             )
         }
@@ -586,7 +569,7 @@ fun TaskDetailToolbar(
         ) {
             Icon(
                 imageVector = Icons.Default.Alarm,
-                contentDescription = "Set reminder",
+                contentDescription = stringResource(R.string.task_detail_set_reminder),
                 tint = MaterialTheme.colorScheme.onTertiary
             )
         }
@@ -594,7 +577,7 @@ fun TaskDetailToolbar(
         Spacer(modifier = Modifier.weight(1f))
 
         Text(
-            text = "Priority: ${task.priority}",
+            text = stringResource(R.string.task_detail_priority_label, getPriorityLabel(task.priority)),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -616,10 +599,20 @@ fun TaskDetailToolbar(
         ) {
             Icon(
                 imageVector = Icons.Default.Delete,
-                contentDescription = "Delete task",
+                contentDescription = stringResource(R.string.delete),
                 tint = Color.White
             )
         }
+    }
+}
+
+@Composable
+private fun getPriorityLabel(priority: Priority): String {
+    return when (priority) {
+        Priority.HIGH -> stringResource(R.string.priority_high)
+        Priority.MEDIUM -> stringResource(R.string.priority_medium)
+        Priority.LOW -> stringResource(R.string.priority_low)
+        Priority.DEFAULT -> stringResource(R.string.priority_none)
     }
 }
 
@@ -640,7 +633,7 @@ private fun SubtasksSection(
     Column(modifier = modifier.fillMaxWidth()) {
         // Section header "Subtasks (2)"
         Text(
-            text = "Subtasks (${subtasks.size})",
+            text = stringResource(R.string.task_detail_subtasks_title, subtasks.size),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -684,7 +677,7 @@ private fun SubtasksSection(
                     checkmarkColor = Color.White
                 )
 
-                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides DpSize.Zero) {
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                     Checkbox(
                         checked = subtask.status == TaskStatus.DONE,
                         onCheckedChange = { checked ->
@@ -696,63 +689,43 @@ private fun SubtasksSection(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                TextField(
+                BasicTextField(
                     value = subtaskTitle,
                     onValueChange = { newTitle ->
                         subtaskTitle = newTitle
-                        subtask.id?.let {
-                            onEditSubtaskTitle(it.toString(), newTitle)
-                        }
+                        subtask.id?.let { onEditSubtaskTitle(it.toString(), newTitle) }
                     },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
                         color = if (subtask.status == TaskStatus.DONE)
                             MaterialTheme.colorScheme.onSurfaceVariant
-                        else
-                            MaterialTheme.colorScheme.onSurface,
+                        else MaterialTheme.colorScheme.onSurface,
                         textDecoration = if (subtask.status == TaskStatus.DONE)
-                            TextDecoration.LineThrough
-                        else null
+                            TextDecoration.LineThrough else null
                     ),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
+                    singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(
                         onNext = {
-                            // 创建新的子任务，插入到当前subtask的下一个位置
                             subtask.parentId?.let { parentId ->
                                 onAddSubtask(parentId, "", (index + 1).toLong())
                             }
                         }
                     ),
-                    singleLine = true,
                     modifier = Modifier
                         .weight(1f)
-                        .focusRequester(if (index < focusRequesters.size) focusRequesters[index] else FocusRequester())
+                        .focusRequester(if (index < focusRequesters.size) focusRequesters[index] else remember { FocusRequester() })
                         .onKeyEvent { keyEvent ->
-                            // 监听删除键：当文本为空且按下删除键时，删除当前subtask
                             if (keyEvent.key == Key.Backspace &&
                                 keyEvent.type == KeyEventType.KeyUp &&
                                 subtaskTitle.isEmpty()) {
-
-                                // 将焦点转移到上一个subtask（如果存在）
                                 if (index > 0 && index - 1 < focusRequesters.size) {
                                     focusRequesters[index - 1].requestFocus()
                                 }
-
-                                // 删除当前subtask
-                                subtask.id?.let { subtaskId ->
-                                    onDeleteSubtask(subtaskId)
-                                }
-
-                                true // 消费这个键盘事件
-                            } else {
-                                false // 不消费，让系统处理
-                            }
-                        }
+                                subtask.id?.let { onDeleteSubtask(it) }
+                                true
+                            } else false
+                        },
+                    decorationBox = { innerTextField -> innerTextField() }
                 )
             }
         }

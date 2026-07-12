@@ -3,10 +3,9 @@ import java.io.FileInputStream
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.ksp)
     alias(libs.plugins.google.gms.google.services)
 }
 
@@ -18,12 +17,12 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace = "me.superbear.todolist"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "me.superbear.todolist"
-        minSdk = 28
-        targetSdk = 36
+        minSdk = 35
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -43,6 +42,7 @@ android {
             )
             buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY") ?: ""}\"")
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
+            buildConfigField("String", "OPENAI_MODEL", "\"${localProperties.getProperty("OPENAI_MODEL") ?: "gpt-4.1-mini"}\"")
             buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
             // Controls whether to force no blur fallback even on supported versions
             buildConfigField("boolean", "DEBUG_FORCE_NO_BLUR_FALLBACK", "false")
@@ -53,6 +53,7 @@ android {
         debug {
             buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY") ?: ""}\"")
             buildConfigField("String", "OPENAI_BASE_URL", "\"${localProperties.getProperty("OPENAI_BASE_URL") ?: "https://api.openai.com"}\"")
+            buildConfigField("String", "OPENAI_MODEL", "\"${localProperties.getProperty("OPENAI_MODEL") ?: "gpt-4.1-mini"}\"")
             buildConfigField("boolean", "USE_MOCK_ASSISTANT", "false")
             buildConfigField("boolean", "FORCE_DELETE_DB", "true")
             // Controls whether to force no blur fallback even on supported versions
@@ -63,11 +64,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-    kotlinOptions {
-        jvmTarget = "11"
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
@@ -75,6 +73,7 @@ android {
 }
 
 dependencies {
+    implementation("ai.koog:agents-core-android:1.0.0")
     implementation(libs.firebase.ai)
     val room_version = "2.7.2"
     implementation("androidx.room:room-runtime:${room_version}")
@@ -98,6 +97,8 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

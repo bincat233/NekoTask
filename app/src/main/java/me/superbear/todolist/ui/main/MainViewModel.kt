@@ -1,6 +1,7 @@
 package me.superbear.todolist.ui.main
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,9 +17,14 @@ import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import me.superbear.todolist.assistant.MockAssistantClient
-import me.superbear.todolist.assistant.RealAssistantClient
+import java.util.Locale
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import ai.koog.prompt.llm.LLMProvider
+import ai.koog.prompt.executor.clients.openai.OpenAIModels
+import me.superbear.todolist.R
 import me.superbear.todolist.BuildConfig
+import me.superbear.todolist.assistant.TodoAgent
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.domain.entities.ChatMessage
 import me.superbear.todolist.domain.entities.MessageStatus
@@ -26,8 +32,6 @@ import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Sender
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
-import me.superbear.todolist.ui.main.sections.chatOverlay.AssistantActionHooks
-import me.superbear.todolist.ui.main.sections.chatOverlay.AssistantController
 import me.superbear.todolist.ui.main.sections.chatOverlay.ChatOverlayReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerReducer
 import me.superbear.todolist.ui.main.sections.manualAddSuite.ManualAddReducer
@@ -37,39 +41,80 @@ import me.superbear.todolist.ui.main.state.SubtaskDivisionEvent
 import me.superbear.todolist.ui.main.state.LongTermMemoryEvent
 import me.superbear.todolist.ui.main.state.AppEvent
 import me.superbear.todolist.ui.main.state.AppState
+import me.superbear.todolist.assistant.subtask.DivisionStrategy
 import me.superbear.todolist.assistant.subtask.SubtaskDivisionService
+import me.superbear.todolist.assistant.subtask.SubtaskDivisionResponse
+import me.superbear.todolist.assistant.subtask.SubtaskDivisionResult
 import me.superbear.todolist.data.repository.LongTermMemoryRepository
+import me.superbear.todolist.ui.settings.SettingsState
 
 /**
  * Refactored MainViewModel - Thin orchestrator that routes events to reducers
  * and handles side effects (I/O, async operations).
  *
- * Key changes:
- * - Uses AppState instead of UiState (composed of sub-domain states)
- * - Routes AppEvent to appropriate reducers
- * - Delegates assistant logic to AssistantController
- * - Maintains single-screen UX while improving separation of concerns
+ * Now uses Koog AIAgent via TodoAgent for AI chat and tools.
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+    private val prefs = application.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
     private val todoRepository = TodoRepository(application)
-    private val realAssistantClient = RealAssistantClient()
-    private val mockAssistantClient = MockAssistantClient()
-    private val assistantController = AssistantController(
-        mockAssistantClient = mockAssistantClient,
-        realAssistantClient = realAssistantClient
+    private val longTermMemoryRepository = LongTermMemoryRepository(todoRepository.database.longTermMemoryDao())
+    private val todoAgent = TodoAgent(todoRepository, longTermMemoryRepository)
+
+    private val _selectedProvider = MutableStateFlow<LLMProvider>(LLMProvider.OpenAI)
+    val selectedProvider: StateFlow<LLMProvider> = _selectedProvider.asStateFlow()
+
+    private val _currentApiKey = MutableStateFlow("")
+    val currentApiKey: StateFlow<String> = _currentApiKey.asStateFlow()
+
+    private val _selectedModel = MutableStateFlow("")
+    val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
+
+    data class ProviderInfo(
+        val displayName: String,
+        val defaultModel: String,
+        val fallbackModels: List<String>
     )
-    private val subtaskDivisionService = SubtaskDivisionService(
-        assistantClient = if (BuildConfig.USE_MOCK_ASSISTANT) mockAssistantClient else realAssistantClient,
-        todoRepository = todoRepository
+
+    val PROVIDER_INFO = mapOf(
+        LLMProvider.OpenAI to ProviderInfo("OpenAI", "gpt-5-mini", listOf(
+            "gpt-5", "gpt-5-mini", "gpt-5-nano",
+            "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+            "gpt-4o", "gpt-4o-mini",
+            "o3-mini", "o4-mini"
+        )),
+        LLMProvider.DeepSeek to ProviderInfo("DeepSeek", "deepseek-v4-flash", listOf(
+            "deepseek-v4-flash", "deepseek-v4-pro"
+        ))
     )
-    private val json = Json { prettyPrint = true }
-    
-    // 防抖机制：避免过于频繁的数据库写入
-    private var titleUpdateJob: Job? = null
-    private var contentUpdateJob: Job? = null
-    private val debounceDelayMs = 300L // 300ms 防抖延迟
-    
-    // Root state using new AppState structure
+
+    private val _availableModels = MutableStateFlow<List<String>>(emptyList())
+    val availableModels: StateFlow<List<String>> = _availableModels.asStateFlow()
+
+    private val _isLoadingModels = MutableStateFlow(false)
+    val isLoadingModels: StateFlow<Boolean> = _isLoadingModels.asStateFlow()
+
+    private val _settingsState = MutableStateFlow(
+        SettingsState(
+            useAI = prefs.getBoolean("settings_use_ai", true),
+            maxSubtasks = prefs.getInt("settings_max_subtasks", 5),
+            aiDivisionStrategy = prefs.getString("settings_ai_strategy", null)
+                ?.let { runCatching { DivisionStrategy.valueOf(it) }.getOrNull() }
+                ?: DivisionStrategy.BALANCED,
+            currentLanguage = AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag() ?: "auto"
+        )
+    )
+    val settingsState: StateFlow<SettingsState> = _settingsState.asStateFlow()
+
+    fun updateLanguage(languageTag: String) {
+        val appLocale: LocaleListCompat = if (languageTag == "auto") {
+            LocaleListCompat.getEmptyLocaleList()
+        } else {
+            LocaleListCompat.forLanguageTags(languageTag)
+        }
+        AppCompatDelegate.setApplicationLocales(appLocale)
+        _settingsState.update { it.copy(currentLanguage = languageTag) }
+    }
+
     private val _appState = MutableStateFlow(
         AppState(
             useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT,
@@ -79,15 +124,124 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val appState: StateFlow<AppState> = _appState.asStateFlow()
 
     init {
+        // Migrate old keys to provider-prefixed format
+        val oldKey = prefs.getString("api_key", null)
+        if (oldKey != null && prefs.getString("openai_api_key", null) == null) {
+            prefs.edit().putString("openai_api_key", oldKey).remove("api_key").apply()
+        }
+        val oldModel = prefs.getString("selected_model", null)
+        if (oldModel != null && prefs.getString("openai_selected_model", null) == null) {
+            prefs.edit().putString("openai_selected_model", oldModel).remove("selected_model").apply()
+        }
+
+        val initialProviderStr = prefs.getString("selected_provider", null)
+        val initialProvider = when (initialProviderStr) {
+            "openai" -> LLMProvider.OpenAI
+            "deepseek" -> LLMProvider.DeepSeek
+            else -> LLMProvider.OpenAI
+        }
+        val initialInfo = PROVIDER_INFO[initialProvider] ?: PROVIDER_INFO[LLMProvider.OpenAI]!!
+
+        val initialKey = loadApiKey(initialProvider)
+        val initialModel = loadModel(initialProvider, initialInfo)
+
+        todoAgent.setApiKey(initialProvider, initialKey)
+        todoAgent.selectProvider(initialProvider)
+        todoAgent.selectModelByName(initialModel)
+
+        _selectedProvider.value = initialProvider
+        _currentApiKey.value = initialKey
+        _selectedModel.value = initialModel
+
         loadTasks()
-        setupAssistantStateProvider()
+        refreshModels()
+        observeMemories()
     }
+
+    private fun observeMemories() {
+        viewModelScope.launch {
+            longTermMemoryRepository.getAllMemories().collect { memories ->
+                _settingsState.update { it.copy(longTermMemories = memories) }
+            }
+        }
+    }
+
+    private fun loadApiKey(provider: LLMProvider): String {
+        val key = prefs.getString("${provider.id.lowercase()}_api_key", null)
+        return key?.takeIf { it.isNotBlank() } ?: BuildConfig.OPENAI_API_KEY
+    }
+
+    private fun loadModel(provider: LLMProvider, info: ProviderInfo = PROVIDER_INFO[provider]!!): String {
+        val model = prefs.getString("${provider.id.lowercase()}_selected_model", null)
+        return model?.takeIf { it.isNotBlank() } ?: info.defaultModel
+    }
+
+    fun selectProvider(provider: LLMProvider) {
+        val info = PROVIDER_INFO[provider] ?: return
+        prefs.edit().putString("selected_provider", provider.id).apply()
+
+        val key = loadApiKey(provider)
+        val model = loadModel(provider, info)
+        todoAgent.setApiKey(provider, key)
+        todoAgent.selectProvider(provider)
+        todoAgent.selectModelByName(model)
+
+        _selectedProvider.value = provider
+        _currentApiKey.value = key
+        _selectedModel.value = model
+        refreshModels()
+    }
+
+    fun setApiKey(provider: LLMProvider, key: String) {
+        val trimmed = key.trim()
+        prefs.edit().putString("${provider.id.lowercase()}_api_key", trimmed).apply()
+        if (_selectedProvider.value == provider) {
+            todoAgent.setApiKey(provider, trimmed)
+            _currentApiKey.value = trimmed
+        }
+    }
+
+    fun selectModel(model: String) {
+        val provider = _selectedProvider.value
+        prefs.edit().putString("${provider.id.lowercase()}_selected_model", model).apply()
+        todoAgent.selectModelByName(model)
+        _selectedModel.value = model
+    }
+
+    fun refreshModels() {
+        val info = PROVIDER_INFO[_selectedProvider.value]
+        if (info != null) {
+            _availableModels.value = info.fallbackModels
+        }
+    }
+
+    fun updateSettings(settings: SettingsState) {
+        prefs.edit()
+            .putBoolean("settings_use_ai", settings.useAI)
+            .putInt("settings_max_subtasks", settings.maxSubtasks)
+            .putString("settings_ai_strategy", settings.aiDivisionStrategy.name)
+            .apply()
+        _settingsState.value = settings
+    }
+
+    private fun getSubtaskDivisionService(): SubtaskDivisionService {
+        return SubtaskDivisionService(
+            promptExecutor = todoAgent.buildExecutor(),
+            model = todoAgent.getCurrentModel(),
+            todoRepository = todoRepository
+        )
+    }
+
+    private val json = Json { prettyPrint = true }
+
+    // Debounce mechanism
+    private var titleUpdateJob: Job? = null
+    private var contentUpdateJob: Job? = null
+    private val debounceDelayMs = 300L
 
     private fun loadTasks() {
         viewModelScope.launch {
-            // 显示加载中
             _appState.update { s -> s.copy(taskState = s.taskState.copy(isLoading = true)) }
-            // 观察 Repository 的任务变化，直接写入 UI 状态（DB 为唯一数据源）
             todoRepository.tasks.collect { tasks ->
                 _appState.update { currentState ->
                     currentState.copy(
@@ -98,13 +252,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
-        }
-    }
-
-    private fun setupAssistantStateProvider() {
-        // Provide CURRENT_TODO_STATE to the real assistant client.
-        assistantController.setStateProvider {
-            buildCurrentTodoStateSnapshot()
         }
     }
 
@@ -134,20 +281,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val tasks = _appState.value.taskState.items
         val nowIso = Clock.System.now().toString()
 
-        // Build parent->children maps for both statuses (for children lists)
         val openTasks = tasks.filter { it.status == TaskStatus.OPEN }
         val doneTasks = tasks.filter { it.status == TaskStatus.DONE }
 
         val openChildrenMap = openTasks.groupBy { it.parentId }
         val doneChildrenMap = doneTasks.groupBy { it.parentId }
-
-        // Also build a map across ALL tasks to compute totals/progress
         val allChildrenMap = tasks.groupBy { it.parentId }
-        val byId = tasks.associateBy { it.id }
 
-        fun Task.priorityString(): String = this.priority.name
-
-        // Count all descendants for totals
         fun allDescendants(id: Long): List<Task> {
             val result = mutableListOf<Task>()
             fun dfs(currId: Long) {
@@ -176,7 +316,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 id = myId,
                 title = this.title,
                 status = this.status.name,
-                priority = this.priorityString(),
+                priority = this.priority.name,
                 dueAt = this.dueAt?.toString(),
                 children = childNodes,
                 totalChildren = totalChildren,
@@ -200,9 +340,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return json.encodeToString(snapshot)
     }
 
-    /**
-     * Main event handler - routes events to appropriate reducers and handles side effects
-     */
     fun onEvent(event: AppEvent) {
         when (event) {
             is AppEvent.Task -> handleTaskEvent(event.event)
@@ -228,63 +365,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 toggleTaskPersist(event.task)
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Add -> {
-                // Persist add to DB; rely on Room Flow to update UI
                 viewModelScope.launch {
                     val t = event.task
                     todoRepository.addTask(
-                        title = t.title,
-                        parentId = t.parentId,
-                        content = t.content,
-                        priority = t.priority,
-                        dueAt = t.dueAt,
-                        status = t.status
+                        title = t.title, parentId = t.parentId, content = t.content,
+                        priority = t.priority, dueAt = t.dueAt, status = t.status
                     )
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Update -> {
-                // Persist update to DB; rely on Room Flow to update UI
                 val t = event.task
                 val id = t.id
                 if (id != null) {
                     viewModelScope.launch {
                         todoRepository.updateTask(
-                            id = id,
-                            title = t.title,
-                            content = t.content,
-                            priority = t.priority,
-                            dueAt = t.dueAt
+                            id = id, title = t.title, content = t.content,
+                            priority = t.priority, dueAt = t.dueAt
                         )
                     }
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.Delete -> {
-                // Persist delete to DB; rely on Room Flow to update UI
-                viewModelScope.launch {
-                    todoRepository.deleteTask(event.taskId)
-                }
+                viewModelScope.launch { todoRepository.deleteTask(event.taskId) }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.AddSubtask -> {
-                Log.d("MainViewModel", "Adding subtask: ${event.title} to parent: ${event.parentId}, order: ${event.order}")
                 if (event.order != null) {
-                    // Insert at specific position
-                    todoRepository.insertTaskAt(
-                        title = event.title,
-                        parentId = event.parentId,
-                        order = event.order
-                    )
+                    todoRepository.insertTaskAt(title = event.title, parentId = event.parentId, order = event.order)
                 } else {
-                    // Add at the end (default behavior)
-                    todoRepository.addTask(
-                        title = event.title,
-                        parentId = event.parentId
-                    )
+                    todoRepository.addTask(title = event.title, parentId = event.parentId)
                 }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.DeleteSubtask -> {
-                Log.d("MainViewModel", "Deleting subtask: ${event.subtaskId}")
-                viewModelScope.launch {
-                    todoRepository.deleteTask(event.subtaskId)
-                }
+                viewModelScope.launch { todoRepository.deleteTask(event.subtaskId) }
             }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.ToggleSubtask -> {
                 todoRepository.toggleTaskStatus(event.childId, event.done)
@@ -294,16 +406,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     todoRepository.updateTask(id = event.subtaskId, title = event.newTitle)
                 }
             }
-            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.LoadTasks -> {
-                loadTasks()
-            }
+            is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.LoadTasks -> { loadTasks() }
             is me.superbear.todolist.ui.main.sections.tasks.TaskEvent.TasksLoaded -> {
-                // 直接更新 UI 状态
                 _appState.update { currentState ->
                     currentState.copy(
                         taskState = currentState.taskState.copy(
-                            items = event.tasks,
-                            isLoading = false
+                            items = event.tasks, isLoading = false
                         )
                     )
                 }
@@ -344,7 +452,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleDateTimePickerEvent(event: me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent) {
         when (event) {
             is me.superbear.todolist.ui.main.sections.manualAddSuite.DateTimePickerEvent.SetDueDate -> {
-                // If task detail is open, apply directly to the selected task
                 val detail = _appState.value.taskDetailState
                 val taskId = detail.selectedTaskId
                 if (detail.isVisible && taskId != null && event.timestamp != null) {
@@ -353,7 +460,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val dueAt = Instant.fromEpochMilliseconds(event.timestamp)
                             val updatedAt = Clock.System.now().toEpochMilliseconds()
                             todoRepository.updateDueAt(taskId, dueAt, updatedAt)
-                            Log.d("MainViewModel", "Updated task due date: $taskId -> $dueAt")
                         } catch (e: Exception) {
                             Log.e("MainViewModel", "Failed to update task due date: $taskId", e)
                         }
@@ -380,8 +486,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val detail = _appState.value.taskDetailState
             val taskId = detail.selectedTaskId
             if (detail.isVisible && taskId != null) {
-                val id = taskId
-                viewModelScope.launch { todoRepository.updateTask(id, priority = event.priority) }
+                viewModelScope.launch { todoRepository.updateTask(taskId, priority = event.priority) }
             }
         }
         _appState.update { currentState ->
@@ -395,78 +500,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when (event) {
             is TaskDetailEvent.ShowDetail -> {
                 val task = _appState.value.taskState.items.find { it.id == event.taskId }
-                _appState.update { 
+                _appState.update {
                     it.copy(
                         taskDetailState = it.taskDetailState.copy(
-                            isVisible = true, 
-                            selectedTaskId = event.taskId,
-                            editedTitle = task?.title ?: "",
-                            editedContent = task?.content ?: ""
+                            isVisible = true, selectedTaskId = event.taskId,
+                            editedTitle = task?.title ?: "", editedContent = task?.content ?: ""
                         )
-                    ) 
+                    )
                 }
             }
             is TaskDetailEvent.HideDetail -> {
-                _appState.update { 
+                _appState.update {
                     it.copy(
                         taskDetailState = it.taskDetailState.copy(
-                            isVisible = false, 
-                            selectedTaskId = null,
-                            editedTitle = "",
-                            editedContent = ""
+                            isVisible = false, selectedTaskId = null,
+                            editedTitle = "", editedContent = ""
                         )
-                    ) 
+                    )
                 }
             }
             is TaskDetailEvent.EditTitle -> {
-                // 立即更新UI状态
-                _appState.update { 
-                    it.copy(
-                        taskDetailState = it.taskDetailState.copy(editedTitle = event.title)
-                    ) 
+                _appState.update {
+                    it.copy(taskDetailState = it.taskDetailState.copy(editedTitle = event.title))
                 }
-                // 随输随存：防抖保存到数据库
                 debouncedTitleUpdate(event.title)
             }
             is TaskDetailEvent.EditContent -> {
-                // 立即更新UI状态
-                _appState.update { 
-                    it.copy(
-                        taskDetailState = it.taskDetailState.copy(editedContent = event.content)
-                    ) 
+                _appState.update {
+                    it.copy(taskDetailState = it.taskDetailState.copy(editedContent = event.content))
                 }
-                // 随输随存：防抖保存到数据库
                 debouncedContentUpdate(event.content)
             }
             is TaskDetailEvent.UpdatePriority -> {
-                // 更新任务优先级
                 viewModelScope.launch {
                     try {
                         val updatedAt = Clock.System.now().toEpochMilliseconds()
                         todoRepository.updatePriority(event.taskId, event.priority, updatedAt)
-                        Log.d("MainViewModel", "Updated task priority: ${event.taskId} -> ${event.priority}")
                     } catch (e: Exception) {
                         Log.e("MainViewModel", "Failed to update task priority: ${event.taskId}", e)
                     }
                 }
             }
             is TaskDetailEvent.DeleteTask -> {
-                // 递归删除任务及其所有子任务
                 viewModelScope.launch {
                     try {
                         todoRepository.deleteTaskRecursively(event.taskId)
-                        Log.d("MainViewModel", "Recursively deleted task: ${event.taskId}")
-                        
-                        // 删除后自动关闭详情页面
-                        _appState.update { 
+                        _appState.update {
                             it.copy(
                                 taskDetailState = it.taskDetailState.copy(
-                                    isVisible = false,
-                                    selectedTaskId = null,
-                                    editedTitle = "",
-                                    editedContent = ""
-                                ) 
-                            ) 
+                                    isVisible = false, selectedTaskId = null,
+                                    editedTitle = "", editedContent = ""
+                                )
+                            )
                         }
                     } catch (e: Exception) {
                         Log.e("MainViewModel", "Failed to delete task: ${event.taskId}", e)
@@ -480,38 +565,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when (event) {
             is SubtaskDivisionEvent.GenerateSuggestions -> {
                 generateSubtaskSuggestions(
-                    taskId = event.taskId,
-                    strategy = event.strategy,
-                    maxSubtasks = event.maxSubtasks,
-                    context = event.context,
-                    useAI = event.useAI
+                    taskId = event.taskId, strategy = event.strategy,
+                    maxSubtasks = event.maxSubtasks, context = event.context, useAI = event.useAI
                 )
             }
             is SubtaskDivisionEvent.CreateFromSuggestions -> {
                 createSubtasksFromAI(
-                    taskId = event.taskId,
-                    strategy = event.strategy,
-                    maxSubtasks = event.maxSubtasks,
-                    context = event.context,
-                    useAI = event.useAI
+                    taskId = event.taskId, strategy = event.strategy,
+                    maxSubtasks = event.maxSubtasks, context = event.context, useAI = event.useAI
                 )
             }
             is SubtaskDivisionEvent.BatchDivide -> {
                 batchDivideSubtasks(
-                    taskIds = event.taskIds,
-                    strategy = event.strategy,
-                    useAI = event.useAI
+                    taskIds = event.taskIds, strategy = event.strategy, useAI = event.useAI
                 )
             }
         }
     }
 
     private fun generateSubtaskSuggestions(
-        taskId: Long,
-        strategy: me.superbear.todolist.assistant.subtask.DivisionStrategy?,
-        maxSubtasks: Int?,
-        context: String?,
-        useAI: Boolean
+        taskId: Long, strategy: DivisionStrategy?, maxSubtasks: Int?,
+        context: String?, useAI: Boolean
     ) {
         val task = _appState.value.taskState.items.find { it.id == taskId }
         if (task == null) {
@@ -521,19 +595,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                Log.d("MainViewModel", "Generating subtask suggestions for: ${task.title}")
-                val result = subtaskDivisionService.generateSubtaskSuggestions(
-                    task = task,
-                    strategy = strategy,
-                    maxSubtasks = maxSubtasks,
-                    context = context,
-                    useAI = useAI
+                val result = getSubtaskDivisionService().generateSubtaskSuggestions(
+                    task = task, strategy = strategy, maxSubtasks = maxSubtasks,
+                    context = context, useAI = useAI
                 )
-                
                 result.fold(
                     onSuccess = { response ->
                         Log.d("MainViewModel", "Generated ${response.subtasks.size} subtask suggestions")
-                        // TODO: 可以在这里添加UI状态更新，显示建议给用户确认
                     },
                     onFailure = { error ->
                         Log.e("MainViewModel", "Failed to generate subtask suggestions", error)
@@ -546,11 +614,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun createSubtasksFromAI(
-        taskId: Long,
-        strategy: me.superbear.todolist.assistant.subtask.DivisionStrategy?,
-        maxSubtasks: Int?,
-        context: String?,
-        useAI: Boolean
+        taskId: Long, strategy: DivisionStrategy?, maxSubtasks: Int?,
+        context: String?, useAI: Boolean
     ) {
         val task = _appState.value.taskState.items.find { it.id == taskId }
         if (task == null) {
@@ -560,29 +625,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                // 设置加载状态为true
                 _appState.update { currentState ->
                     currentState.copy(
-                        taskDetailState = currentState.taskDetailState.copy(
-                            isSubtaskDivisionLoading = true
-                        )
+                        taskDetailState = currentState.taskDetailState.copy(isSubtaskDivisionLoading = true)
                     )
                 }
-                
-                Log.d("MainViewModel", "Creating subtasks for: ${task.title}")
-                val result = subtaskDivisionService.divideAndCreateSubtasks(
-                    parentTask = task,
-                    strategy = strategy,
-                    maxSubtasks = maxSubtasks,
-                    context = context,
-                    useAI = useAI,
-                    forceCreate = true
+                val result = getSubtaskDivisionService().divideAndCreateSubtasks(
+                    parentTask = task, strategy = strategy, maxSubtasks = maxSubtasks,
+                    context = context, useAI = useAI, forceCreate = true
                 )
-                
                 result.fold(
                     onSuccess = { divisionResult ->
                         Log.d("MainViewModel", "Successfully created ${divisionResult.createdTasks.size} subtasks")
-                        // UI will automatically update through Room Flow
                     },
                     onFailure = { error ->
                         Log.e("MainViewModel", "Failed to create subtasks", error)
@@ -591,12 +645,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Unexpected error in subtask creation", e)
             } finally {
-                // 无论成功还是失败，都清除加载状态
                 _appState.update { currentState ->
                     currentState.copy(
-                        taskDetailState = currentState.taskDetailState.copy(
-                            isSubtaskDivisionLoading = false
-                        )
+                        taskDetailState = currentState.taskDetailState.copy(isSubtaskDivisionLoading = false)
                     )
                 }
             }
@@ -604,9 +655,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun batchDivideSubtasks(
-        taskIds: List<Long>,
-        strategy: me.superbear.todolist.assistant.subtask.DivisionStrategy?,
-        useAI: Boolean
+        taskIds: List<Long>, strategy: DivisionStrategy?, useAI: Boolean
     ) {
         val tasks = _appState.value.taskState.items.filter { it.id in taskIds }
         if (tasks.isEmpty()) {
@@ -616,21 +665,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                Log.d("MainViewModel", "Batch dividing ${tasks.size} tasks")
-                val result = subtaskDivisionService.batchDivideAndCreate(
-                    tasks = tasks,
-                    strategy = strategy,
-                    useAI = useAI
+                val result = getSubtaskDivisionService().batchDivideAndCreate(
+                    tasks = tasks, strategy = strategy, useAI = useAI
                 )
-                
                 result.fold(
                     onSuccess = { results ->
                         val totalCreated = results.sumOf { it.createdTasks.size }
                         Log.d("MainViewModel", "Batch division completed: $totalCreated subtasks created")
                     },
-                    onFailure = { error ->
-                        Log.e("MainViewModel", "Batch division failed", error)
-                    }
+                    onFailure = { error -> Log.e("MainViewModel", "Batch division failed", error) }
                 )
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Unexpected error in batch division", e)
@@ -638,70 +681,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Task Management: persist first, UI listens to DB Flow
     private fun toggleTaskPersist(task: Task) {
         val newDone = task.status == TaskStatus.OPEN
         val id = task.id ?: return
-        viewModelScope.launch {
-            todoRepository.toggleTaskStatus(id, newDone)
-        }
+        viewModelScope.launch { todoRepository.toggleTaskStatus(id, newDone) }
     }
 
-
-    /**
-     * 防抖更新标题：取消之前的更新任务，延迟后执行新的更新
-     */
     private fun debouncedTitleUpdate(newTitle: String) {
         val selectedTaskId = _appState.value.taskDetailState.selectedTaskId ?: return
-        
-        // 取消之前的更新任务
         titleUpdateJob?.cancel()
-        
-        // 启动新的防抖更新任务
         titleUpdateJob = viewModelScope.launch {
             delay(debounceDelayMs)
-            
-            // 检查任务是否仍然选中且标题确实有变化
             val currentState = _appState.value.taskDetailState
             if (currentState.selectedTaskId == selectedTaskId) {
                 val originalTask = _appState.value.taskState.items.find { it.id == selectedTaskId }
                 if (originalTask != null && originalTask.title != newTitle) {
                     val updatedAt = Clock.System.now().toEpochMilliseconds()
                     todoRepository.updateTitle(selectedTaskId, newTitle, updatedAt)
-                    Log.d("MainViewModel", "Auto-saved title: $newTitle")
                 }
             }
         }
     }
 
-    /**
-     * 防抖更新内容：取消之前的更新任务，延迟后执行新的更新
-     */
     private fun debouncedContentUpdate(newContent: String) {
         val selectedTaskId = _appState.value.taskDetailState.selectedTaskId ?: return
-        
-        // 取消之前的更新任务
         contentUpdateJob?.cancel()
-        
-        // 启动新的防抖更新任务
         contentUpdateJob = viewModelScope.launch {
             delay(debounceDelayMs)
-            
-            // 检查任务是否仍然选中且内容确实有变化
             val currentState = _appState.value.taskDetailState
             if (currentState.selectedTaskId == selectedTaskId) {
                 val originalTask = _appState.value.taskState.items.find { it.id == selectedTaskId }
                 if (originalTask != null && originalTask.content != newContent) {
                     val updatedAt = Clock.System.now().toEpochMilliseconds()
                     todoRepository.updateContent(selectedTaskId, newContent.takeIf { it.isNotBlank() }, updatedAt)
-                    Log.d("MainViewModel", "Auto-saved content")
                 }
             }
         }
     }
-
-
-    // Removed obsolete optimistic subtask toggle; DB is the single source of truth.
 
     private fun handleManualAddSubmit(title: String, description: String?) {
         val currentState = _appState.value
@@ -709,24 +725,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Instant.fromEpochMilliseconds(timestamp)
         }
 
-        // Add minimal task to database; Room will auto-generate the ID.
-        // 现在一并持久化描述/优先级/截止时间。
         viewModelScope.launch {
             try {
                 todoRepository.addTask(
-                    title = title,
-                    parentId = null,
-                    content = description,
-                    priority = currentState.priorityState.selectedPriority,
-                    dueAt = dueAtInstant
+                    title = title, parentId = null, content = description,
+                    priority = currentState.priorityState.selectedPriority, dueAt = dueAtInstant
                 )
-                Log.d("MainViewModel", "Task added successfully: $title")
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to add task: $title", e)
             }
         }
-
-        // Reset manual add form
         resetManualForm()
     }
 
@@ -749,29 +757,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Chat Handling
+    // Chat Handling — uses Koog TodoAgent
     private fun handleSendChat(message: String) {
         val userMessage = ChatMessage(
-            text = message,
-            sender = Sender.User,
-            timestamp = Clock.System.now(),
-            status = MessageStatus.Sent
+            text = message, sender = Sender.User,
+            timestamp = Clock.System.now(), status = MessageStatus.Sent
         )
         val assistantMessage = ChatMessage(
-            sender = Sender.Assistant,
-            text = "...",
-            timestamp = Clock.System.now(),
-            status = MessageStatus.Sending,
+            sender = Sender.Assistant, text = "...",
+            timestamp = Clock.System.now(), status = MessageStatus.Sending,
             replyToId = userMessage.id
         )
-        
-        // Add messages using reducer
+
         _appState.update { currentState ->
             currentState.copy(
                 chatOverlayState = ChatOverlayReducer.addMessages(
-                    currentState.chatOverlayState,
-                    userMessage,
-                    assistantMessage
+                    currentState.chatOverlayState, userMessage, assistantMessage
                 )
             )
         }
@@ -782,154 +783,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun sendToAssistant(message: String, placeholderMessage: ChatMessage) {
-        // TODO: 获取长期记忆上下文
-        val memoryContext = "" // 暂时为空，后续需要从LongTermMemoryRepository获取
-        
-        val result = assistantController.send(
-            message,
-            _appState.value.chatOverlayState.messages,
-            _appState.value.useMockAssistant,
-            memoryContext
+        val memoryContext = longTermMemoryRepository.getMemoryContextForAI()
+        val todoState = buildCurrentTodoStateSnapshot()
+
+        val result = todoAgent.chat(
+            userMessage = message,
+            history = _appState.value.chatOverlayState.messages,
+            todoState = todoState,
+            memoryContext = memoryContext,
+            language = Locale.getDefault().language
         )
-        
-        result.onSuccess { envelope ->
-            handleAssistantResponse(envelope, placeholderMessage)
+
+        result.onSuccess { responseText ->
+            if (responseText.isNotBlank()) {
+                val newMessage = placeholderMessage.copy(
+                    text = responseText, status = MessageStatus.Sent
+                )
+                _appState.update { currentState ->
+                    currentState.copy(
+                        chatOverlayState = ChatOverlayReducer.replaceMessage(
+                            currentState.chatOverlayState, placeholderMessage.id, newMessage
+                        )
+                    )
+                }
+            } else {
+                _appState.update { currentState ->
+                    currentState.copy(
+                        chatOverlayState = ChatOverlayReducer.removeMessage(
+                            currentState.chatOverlayState, placeholderMessage.id
+                        )
+                    )
+                }
+            }
         }.onFailure { error ->
             handleAssistantError(error, placeholderMessage)
-        }
-    }
-
-    private fun handleAssistantResponse(envelope: me.superbear.todolist.assistant.AssistantEnvelope, placeholderMessage: ChatMessage) {
-        // Handle assistant's text response
-        if (!envelope.say.isNullOrBlank()) {
-            val newAssistantMessage = placeholderMessage.copy(
-                text = envelope.say,
-                status = MessageStatus.Sent
-            )
-            _appState.update { currentState ->
-                currentState.copy(
-                    chatOverlayState = ChatOverlayReducer.replaceMessage(
-                        currentState.chatOverlayState,
-                        placeholderMessage.id,
-                        newAssistantMessage
-                    )
-                )
-            }
-        } else {
-            _appState.update { currentState ->
-                currentState.copy(
-                    chatOverlayState = ChatOverlayReducer.removeMessage(
-                        currentState.chatOverlayState,
-                        placeholderMessage.id
-                    )
-                )
-            }
-        }
-
-        // Handle assistant's actions
-        if (envelope.actions.isNotEmpty()) {
-            if (_appState.value.executeAssistantActions) {
-                executeAssistantActions(envelope.actions)
-            }
         }
     }
 
     private fun handleAssistantError(error: Throwable, placeholderMessage: ChatMessage) {
         Log.e("MainViewModel", "Error sending message", error)
         val errorMessage = placeholderMessage.copy(
-            text = "[Error: unable to fetch response]",
+            text = getApplication<Application>().getString(R.string.error_fetch_response),
             status = MessageStatus.Failed
         )
         _appState.update { currentState ->
             currentState.copy(
                 chatOverlayState = ChatOverlayReducer.replaceMessage(
-                    currentState.chatOverlayState,
-                    placeholderMessage.id,
-                    errorMessage
+                    currentState.chatOverlayState, placeholderMessage.id, errorMessage
                 )
             )
         }
     }
 
-    private fun executeAssistantActions(actions: List<me.superbear.todolist.assistant.AssistantAction>) {
-        viewModelScope.launch {
-            assistantController.executeActions(
-                actions,
-                Clock.System.now(),
-                createAssistantActionHooks()
-            )
-        }
-    }
-
-    private fun createAssistantActionHooks(): AssistantActionHooks {
-        return object : AssistantActionHooks {
-            override suspend fun addTask(task: Task) {
-                // Persist via repository with full fields; UI updates through Room Flow
-                todoRepository.addTask(
-                    title = task.title,
-                    parentId = task.parentId,
-                    content = task.content,
-                    priority = task.priority,
-                    dueAt = task.dueAt,
-                    status = task.status
-                )
-            }
-
-            override suspend fun updateTask(task: Task) {
-                val id = task.id ?: return
-                
-                // Get current task to check what needs updating
-                val currentTask = todoRepository.getTaskById(id)
-                if (currentTask == null) {
-                    Log.w("MainViewModel", "Task not found for update: $id")
-                    return
-                }
-                
-                // Handle status changes separately using the dedicated method
-                if (currentTask.status != task.status) {
-                    val isDone = task.status == TaskStatus.DONE
-                    todoRepository.toggleTaskStatus(id, isDone)
-                    Log.d("MainViewModel", "Updated task status: $id -> ${task.status}")
-                }
-                
-                // Check if any other fields need updating
-                val needsFieldUpdate = currentTask.title != task.title ||
-                    currentTask.content != task.content ||
-                    currentTask.priority != task.priority ||
-                    currentTask.dueAt != task.dueAt
-                
-                // Only call updateTask if other fields actually changed
-                if (needsFieldUpdate) {
-                    todoRepository.updateTask(
-                        id = id,
-                        title = task.title,
-                        content = task.content,
-                        priority = task.priority,
-                        dueAt = task.dueAt
-                    )
-                    Log.d("MainViewModel", "Updated task fields: $id")
-                }
-            }
-
-            override suspend fun deleteTask(taskId: Long) {
-                todoRepository.deleteTask(taskId)
-            }
-
-            override suspend fun moveTaskToParent(taskId: Long, newParentId: Long?, newIndex: Long?) {
-                todoRepository.moveTaskToParent(taskId, newParentId, newIndex)
-            }
-
-            override suspend fun getTask(taskId: Long): Task? {
-                return todoRepository.getTaskById(taskId)
-            }
-
-            override suspend fun getChildren(parentId: Long): List<Task> {
-                return todoRepository.getChildrenFromDb(parentId)
-            }
-        }
-    }
-
-    // Utility methods for task relationships - delegate to repository
     fun getChildren(parentId: Long): List<Task> {
         return todoRepository.getChildrenFromFlow(parentId)
     }
@@ -938,86 +843,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return todoRepository.getParentProgressFromFlow(parentId)
     }
 
-    /**
-     * Get the currently selected task for the task detail sheet
-     */
     fun getSelectedTask(): Task? {
         val selectedTaskId = _appState.value.taskDetailState.selectedTaskId
         return if (selectedTaskId != null) {
             _appState.value.taskState.items.find { it.id == selectedTaskId }
-        } else {
-            null
-        }
+        } else null
     }
 
-    /**
-     * 处理长期记忆事件
-     */
     private fun handleLongTermMemoryEvent(event: LongTermMemoryEvent) {
         when (event) {
             is LongTermMemoryEvent.AddMemory -> {
                 viewModelScope.launch {
-                    try {
-                        // 这里需要注入LongTermMemoryRepository
-                        // 暂时添加日志，后续需要实现依赖注入
-                        Log.d("MainViewModel", "Add memory: ${event.content}")
-                        // longTermMemoryRepository.createMemory(
-                        //     content = event.content,
-                        //     category = event.category,
-                        //     importance = event.importance,
-                        //     isActive = event.isActive
-                        // )
-                    } catch (e: Exception) {
-                        Log.e("MainViewModel", "Error adding memory", e)
-                    }
+                    longTermMemoryRepository.createMemory(
+                        content = event.content,
+                        category = event.category,
+                        importance = event.importance,
+                        isActive = event.isActive
+                    )
                 }
             }
             is LongTermMemoryEvent.EditMemory -> {
                 viewModelScope.launch {
-                    try {
-                        Log.d("MainViewModel", "Edit memory: ${event.memory.id}")
-                        // longTermMemoryRepository.updateMemory(
-                        //     id = event.memory.id!!,
-                        //     content = event.content,
-                        //     category = event.category,
-                        //     importance = event.importance,
-                        //     isActive = event.isActive
-                        // )
-                    } catch (e: Exception) {
-                        Log.e("MainViewModel", "Error editing memory", e)
-                    }
+                    longTermMemoryRepository.updateMemory(
+                        id = event.memory.id,
+                        content = event.content,
+                        category = event.category,
+                        importance = event.importance,
+                        isActive = event.isActive
+                    )
                 }
             }
             is LongTermMemoryEvent.DeleteMemory -> {
                 viewModelScope.launch {
-                    try {
-                        Log.d("MainViewModel", "Delete memory: ${event.memory.id}")
-                        // longTermMemoryRepository.deleteMemory(event.memory.id!!)
-                    } catch (e: Exception) {
-                        Log.e("MainViewModel", "Error deleting memory", e)
-                    }
+                    longTermMemoryRepository.deleteMemory(event.memory.id)
                 }
             }
             is LongTermMemoryEvent.ToggleMemoryActive -> {
                 viewModelScope.launch {
-                    try {
-                        Log.d("MainViewModel", "Toggle memory active: ${event.memory.id} -> ${event.isActive}")
-                        // longTermMemoryRepository.toggleMemoryActive(event.memory.id!!, event.isActive)
-                    } catch (e: Exception) {
-                        Log.e("MainViewModel", "Error toggling memory active", e)
-                    }
+                    longTermMemoryRepository.toggleMemoryActive(event.memory.id, event.isActive)
                 }
             }
             is LongTermMemoryEvent.LoadMemories -> {
-                viewModelScope.launch {
-                    try {
-                        Log.d("MainViewModel", "Load memories")
-                        // val memories = longTermMemoryRepository.getAllMemories()
-                        // 更新设置状态中的记忆列表
-                    } catch (e: Exception) {
-                        Log.e("MainViewModel", "Error loading memories", e)
-                    }
-                }
+                // Flow based, no explicit load needed if UI collects
             }
         }
     }

@@ -15,6 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.R
 import java.util.Calendar
 
 /**
@@ -56,12 +58,12 @@ fun DateTimePickerSection(
                         }
                     }
                 ) {
-                    Text("Next")
+                    Text(stringResource(R.string.datetime_next))
                 }
             },
             dismissButton = {
                 TextButton(onClick = onCancel) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         ) {
@@ -87,12 +89,12 @@ fun DateTimePickerSection(
                         onDateTimeSelected(calendar.timeInMillis)
                     }
                 ) {
-                    Text("Confirm")
+                    Text(stringResource(R.string.datetime_confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = onCancel) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             },
             text = {

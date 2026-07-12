@@ -33,6 +33,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.R
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.ui.common.chat.ChatInputBar
 import me.superbear.todolist.domain.entities.MessageStatus
@@ -48,6 +50,7 @@ import me.superbear.todolist.ui.main.state.AppEvent
 import me.superbear.todolist.ui.main.state.TaskDetailEvent
 import me.superbear.todolist.ui.main.state.SubtaskDivisionEvent
 import me.superbear.todolist.ui.main.state.LongTermMemoryEvent
+import me.superbear.todolist.ui.settings.ProviderDisplayInfo
 import me.superbear.todolist.ui.settings.SettingsScreen
 import me.superbear.todolist.ui.settings.SettingsState
 
@@ -88,6 +91,12 @@ fun MainScreen(
 ) {
     // 从 ViewModel 订阅 UI 状态（StateFlow -> Compose 状态）
     val state by viewModel.appState.collectAsState()
+    val currentApiKey by viewModel.currentApiKey.collectAsState()
+    val selectedProvider by viewModel.selectedProvider.collectAsState()
+    val settingsState by viewModel.settingsState.collectAsState()
+    val selectedModel by viewModel.selectedModel.collectAsState()
+    val availableModels by viewModel.availableModels.collectAsState()
+    val isLoadingModels by viewModel.isLoadingModels.collectAsState()
     val onEvent = viewModel::onEvent
     val localDensity = LocalDensity.current
     
@@ -97,9 +106,6 @@ fun MainScreen(
     
     // 页面导航状态
     var currentPage by remember { mutableStateOf<AppPage>(AppPage.TaskList) }
-    
-    // 设置状态
-    var settingsState by remember { mutableStateOf(SettingsState()) }
     
     // 计算当前模式（简化多处布尔状态判断）
     val currentMode = getCurrentAppMode(state.manualAddState.isOpen, state.chatOverlayState.chatOverlayMode)
@@ -138,7 +144,7 @@ fun MainScreen(
                             .padding(16.dp)
                     ) {
                         Text(
-                            text = "NekoTask",
+                            text = stringResource(R.string.app_name),
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -149,7 +155,7 @@ fun MainScreen(
                     // 抽屉菜单项
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Task, contentDescription = null) },
-                        label = { Text("Tasks") },
+                        label = { Text(stringResource(R.string.menu_tasks)) },
                         selected = currentPage == AppPage.TaskList,
                         onClick = {
                             scope.launch {
@@ -161,7 +167,7 @@ fun MainScreen(
                     )
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.NoteAlt, contentDescription = null) },
-                        label = { Text("Notes") },
+                        label = { Text(stringResource(R.string.menu_notes)) },
                         selected = false,
                         onClick = {
                             scope.launch {
@@ -174,7 +180,7 @@ fun MainScreen(
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                        label = { Text("Settings") },
+                        label = { Text(stringResource(R.string.menu_settings)) },
                         selected = currentPage == AppPage.Settings,
                         onClick = {
                             scope.launch {
@@ -187,13 +193,13 @@ fun MainScreen(
                     
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                        label = { Text("About") },
+                        label = { Text(stringResource(R.string.menu_about)) },
                         selected = false,
                         onClick = {
                             scope.launch {
                                 drawerState.close()
                             }
-                            // TODO: 显示关于信息
+                            // TODO: Show about info
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
@@ -204,7 +210,7 @@ fun MainScreen(
                 topBar = {
                     TopAppBar(
                         title = { 
-                            Text("NekoTask") 
+                            Text(stringResource(R.string.app_name)) 
                         },
                         navigationIcon = {
                             IconButton(
@@ -220,19 +226,19 @@ fun MainScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Menu,
-                                    contentDescription = "打开菜单"
+                                    contentDescription = stringResource(R.string.open_menu)
                                 )
                             }
                         },
                         actions = {
                             IconButton(
                                 onClick = {
-                                    // TODO: 显示更多选项菜单
+                                    // TODO: Show more options menu
                                 }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "更多选项"
+                                    contentDescription = stringResource(R.string.more_options)
                                 )
                             }
                         },
@@ -339,8 +345,18 @@ fun MainScreen(
                             currentPage = AppPage.TaskList
                         },
                         settingsState = settingsState,
-                        onSettingsChange = { newSettings ->
-                            settingsState = newSettings
+                        onSettingsChange = viewModel::updateSettings,
+                        selectedProvider = selectedProvider,
+                        onProviderSelect = viewModel::selectProvider,
+                        apiKey = currentApiKey,
+                        onApiKeySave = viewModel::setApiKey,
+                        selectedModel = selectedModel,
+                        availableModels = availableModels,
+                        isLoadingModels = isLoadingModels,
+                        onModelSelect = viewModel::selectModel,
+                        onRefreshModels = viewModel::refreshModels,
+                        providerInfo = viewModel.PROVIDER_INFO.mapValues { (_, info) ->
+                            ProviderDisplayInfo(info.displayName, info.fallbackModels)
                         },
                         onAddMemory = { content, category, importance, isActive ->
                             onEvent(AppEvent.LongTermMemory(
@@ -361,7 +377,8 @@ fun MainScreen(
                             onEvent(AppEvent.LongTermMemory(
                                 LongTermMemoryEvent.ToggleMemoryActive(memory, isActive)
                             ))
-                        }
+                        },
+                        onLanguageChange = viewModel::updateLanguage
                     )
                 }
             }
@@ -567,8 +584,8 @@ fun ManualAddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
     ExtendedFloatingActionButton(
         onClick = onClick,
         modifier = modifier,
-        icon = { Icon(Icons.Default.Add, contentDescription = "Add Task") },
-        text = { Text("Add") }
+        icon = { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add)) },
+        text = { Text(stringResource(R.string.add)) }
     )
 }
 

@@ -12,5 +12,6 @@ data class SettingsState(
     val maxSubtasks: Int = 5,
     val longTermMemories: List<LongTermMemory> = emptyList(),
     val isMemoryDialogVisible: Boolean = false,
-    val editingMemory: LongTermMemory? = null
+    val editingMemory: LongTermMemory? = null,
+    val currentLanguage: String = "auto" // "auto", "en", "zh"
 )

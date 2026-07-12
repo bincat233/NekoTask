@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.R
 import me.superbear.todolist.domain.entities.LongTermMemory
 import me.superbear.todolist.domain.entities.MemoryCategory
 
@@ -43,7 +45,7 @@ fun LongTermMemoryDialog(
             ) {
                 // 标题
                 Text(
-                    text = if (memory == null) "添加记忆" else "编辑记忆",
+                    text = if (memory == null) stringResource(R.string.memory_add_title) else stringResource(R.string.memory_edit_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
@@ -52,17 +54,17 @@ fun LongTermMemoryDialog(
                 OutlinedTextField(
                     value = content,
                     onValueChange = { content = it },
-                    label = { Text("记忆内容") },
+                    label = { Text(stringResource(R.string.memory_content_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3,
                     maxLines = 5,
-                    placeholder = { Text("输入AI助手需要记住的重要信息...") }
+                    placeholder = { Text(stringResource(R.string.memory_content_placeholder)) }
                 )
 
                 // 类别选择
                 Column {
                     Text(
-                        text = "类别",
+                        text = stringResource(R.string.memory_category_label),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -76,6 +78,14 @@ fun LongTermMemoryDialog(
                             MemoryCategory.PROJECT_INFO -> "project_info"
                             MemoryCategory.PERSONAL -> "personal"
                             MemoryCategory.CONTEXT -> "context"
+                        }
+                        val categoryDisplayName = when (category) {
+                            MemoryCategory.GENERAL -> stringResource(R.string.cat_general)
+                            MemoryCategory.PREFERENCES -> stringResource(R.string.cat_preferences)
+                            MemoryCategory.WORK_HABITS -> stringResource(R.string.cat_work_habits)
+                            MemoryCategory.PROJECT_INFO -> stringResource(R.string.cat_project_info)
+                            MemoryCategory.PERSONAL -> stringResource(R.string.cat_personal)
+                            MemoryCategory.CONTEXT -> stringResource(R.string.cat_context)
                         }
                         Row(
                             modifier = Modifier
@@ -93,7 +103,7 @@ fun LongTermMemoryDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = category.displayName,
+                                text = categoryDisplayName,
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -103,7 +113,7 @@ fun LongTermMemoryDialog(
                 // 重要性滑块
                 Column {
                     Text(
-                        text = "重要性: $importance",
+                        text = stringResource(R.string.memory_importance_label, importance),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -119,12 +129,12 @@ fun LongTermMemoryDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "低",
+                            text = stringResource(R.string.memory_importance_low),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "高",
+                            text = stringResource(R.string.memory_importance_high),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -138,7 +148,7 @@ fun LongTermMemoryDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "激活状态",
+                        text = stringResource(R.string.memory_active_label),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -154,7 +164,7 @@ fun LongTermMemoryDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("取消")
+                        Text(stringResource(R.string.cancel))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
@@ -165,7 +175,7 @@ fun LongTermMemoryDialog(
                         },
                         enabled = content.isNotBlank()
                     ) {
-                        Text("保存")
+                        Text(stringResource(R.string.save))
                     }
                 }
             }

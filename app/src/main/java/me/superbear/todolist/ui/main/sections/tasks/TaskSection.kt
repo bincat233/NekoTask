@@ -45,6 +45,7 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import me.superbear.todolist.R
+import androidx.compose.ui.res.stringResource
 import me.superbear.todolist.domain.entities.Priority
 import me.superbear.todolist.domain.entities.Task
 import me.superbear.todolist.domain.entities.TaskStatus
@@ -73,11 +74,13 @@ fun TaskSection(
     modifier: Modifier = Modifier
 ) {
     // Build a flat list of header and parent rows to feed the LazyColumn
+    val unfinishedStr = stringResource(R.string.section_unfinished)
+    val finishedStr = stringResource(R.string.section_finished)
     val rows = remember(state.items) {
         buildList<RowItem> {
-            add(RowItem.Header("Unfinished"))
+            add(RowItem.Header(unfinishedStr))
             state.openParents.forEach { add(RowItem.Parent(it)) }
-            add(RowItem.Header("Finished"))
+            add(RowItem.Header(finishedStr))
             state.doneParents.forEach { add(RowItem.Parent(it)) }
         }
     }
@@ -203,7 +206,7 @@ private fun ParentTaskCard(
             IconButton(onClick = { expanded = !expanded }) {
                 Icon(
                     imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand"
+                    contentDescription = if (expanded) stringResource(R.string.collapse) else stringResource(R.string.expand)
                 )
             }
             //// Secondary line: due-today indicator (optional)
@@ -263,7 +266,7 @@ private fun ParentTaskCard(
 
                 // Add-subtask action
                 TextButton(onClick = { showAddDialog = true }, modifier = Modifier.padding(start = 16.dp)) {
-                    Text(text = "+ Subtask")
+                    Text(text = stringResource(R.string.add_subtask_inline))
                 }
             }
         }
@@ -282,16 +285,16 @@ private fun ParentTaskCard(
                         showAddDialog = false
                         expanded = true
                     }
-                }) { Text("Add") }
+                }) { Text(stringResource(R.string.add)) }
             },
-            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("Cancel") } },
-            title = { Text("New subtask") },
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text(stringResource(R.string.cancel)) } },
+            title = { Text(stringResource(R.string.new_subtask_title)) },
             text = {
                 TextField(
                     value = title,
                     onValueChange = { title = it },
                     singleLine = true,
-                    placeholder = { Text("Subtask title") }
+                    placeholder = { Text(stringResource(R.string.subtask_title_placeholder)) }
                 )
             }
         )

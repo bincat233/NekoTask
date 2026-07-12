@@ -1,0 +1,111 @@
+<resources>
+    <string name="app_name">NekoTask</string>
+
+    <!-- 通用 -->
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="edit">编辑</string>
+    <string name="add">添加</string>
+    <string name="back">返回</string>
+    <string name="none">无</string>
+    <string name="done">完成</string>
+    <string name="hide">隐藏</string>
+    <string name="show">显示</string>
+
+    <!-- 侧边栏菜单 -->
+    <string name="menu_tasks">任务</string>
+    <string name="menu_notes">笔记</string>
+    <string name="menu_settings">设置</string>
+    <string name="menu_about">关于</string>
+    <string name="open_menu">打开菜单</string>
+    <string name="more_options">更多选项</string>
+
+    <!-- 主界面 / 聊天 -->
+    <string name="ai_input_placeholder">告诉AI你想做什么...</string>
+    <string name="send_message">发送</string>
+    <string name="assistant_avatar">助手头像</string>
+    <string name="error_fetch_response">[错误：无法获取回复]</string>
+
+    <!-- 任务列表 -->
+    <string name="section_unfinished">未完成</string>
+    <string name="section_finished">已完成</string>
+    <string name="expand">展开</string>
+    <string name="collapse">收起</string>
+    <string name="add_subtask_inline">+ 子任务</string>
+    <string name="new_subtask_title">新子任务</string>
+    <string name="subtask_title_placeholder">子任务标题</string>
+
+    <!-- 任务详情 -->
+    <string name="task_detail_title_placeholder">标题</string>
+    <string name="task_detail_content_placeholder">添加详情...</string>
+    <string name="task_detail_no_due_date">无截止日期</string>
+    <string name="task_detail_priority">优先级</string>
+    <string name="task_detail_ai_divide">AI子任务划分</string>
+    <string name="task_detail_add_subtask">添加子任务</string>
+    <string name="task_detail_set_reminder">设置提醒</string>
+    <string name="task_detail_subtasks_title">子任务 (%1$d)</string>
+    <string name="priority_high">高</string>
+    <string name="priority_medium">中</string>
+    <string name="priority_low">低</string>
+    <string name="priority_none">无</string>
+    <string name="due_date">截止日期</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_ai_provider">AI 供应商</string>
+    <string name="settings_api_key_title">API 密钥 (%1$s)</string>
+    <string name="settings_api_key_label">%1$s API 密钥</string>
+    <string name="settings_api_key_hint">密钥仅存储在本机，不会上传到任何服务器</string>
+    <string name="settings_model_title">模型</string>
+    <string name="settings_model_refresh">刷新模型列表</string>
+    <string name="settings_model_select">选择模型</string>
+    <string name="settings_model_count_msg">已从 %2$s 获取 %1$d 个可用模型</string>
+    <string name="settings_model_fallback_msg">显示内置列表，点击刷新按钮从 %1$s 获取最新模型</string>
+    <string name="settings_ai_division_title">AI子任务划分</string>
+    <string name="settings_ai_division_enable">启用AI智能划分</string>
+    <string name="settings_ai_division_enable_desc">基于任务内容智能生成子任务</string>
+    <string name="settings_ai_division_template_desc">使用预设模板生成子任务</string>
+    <string name="settings_ai_strategy_title">划分策略</string>
+    <string name="settings_max_subtasks_title">最大子任务数量: %1$d</string>
+    <string name="settings_max_subtasks_desc">控制每次划分生成的子任务数量上限</string>
+    <string name="strategy_detailed">详细划分</string>
+    <string name="strategy_detailed_desc">生成更多细粒度的子任务，适合复杂项目</string>
+    <string name="strategy_balanced">平衡划分</string>
+    <string name="strategy_balanced_desc">适中的子任务数量和粒度，推荐选择</string>
+    <string name="strategy_simplified">简化划分</string>
+    <string name="strategy_simplified_desc">生成较少的高层次子任务，适合简单任务</string>
+
+    <!-- 长期记忆 -->
+    <string name="memory_title">AI助手长期记忆</string>
+    <string name="memory_desc">管理AI助手的长期记忆，这些信息将在每次对话中提供给AI</string>
+    <string name="memory_empty">暂无记忆，点击右上角 + 按钮添加</string>
+    <string name="memory_add_title">添加记忆</string>
+    <string name="memory_edit_title">编辑记忆</string>
+    <string name="memory_content_label">记忆内容</string>
+    <string name="memory_content_placeholder">输入AI助手需要记住的重要信息...</string>
+    <string name="memory_category_label">类别</string>
+    <string name="memory_importance_label">重要性: %1$d</string>
+    <string name="memory_importance_low">低</string>
+    <string name="memory_importance_high">高</string>
+    <string name="memory_active_label">激活状态</string>
+    <string name="memory_delete_content_desc">删除记忆</string>
+    <string name="memory_edit_content_desc">编辑记忆</string>
+    <string name="memory_add_content_desc">添加记忆</string>
+
+    <!-- 记忆类别 -->
+    <string name="cat_general">通用</string>
+    <string name="cat_preferences">偏好设置</string>
+    <string name="cat_work_habits">工作习惯</string>
+    <string name="cat_project_info">项目信息</string>
+    <string name="cat_personal">个人信息</string>
+    <string name="cat_context">上下文信息</string>
+
+    <!-- 手动添加 -->
+    <string name="manual_add_title">手动添加任务</string>
+    <string name="manual_add_title_placeholder">你想做什么？</string>
+    <string name="manual_add_description_placeholder">描述</string>
+    <string name="manual_add_subtasks_desc">子任务</string>
+    <string name="manual_add_send">发送</string>
+</resources>

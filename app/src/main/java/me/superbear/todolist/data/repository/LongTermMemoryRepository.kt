@@ -126,4 +126,11 @@ class LongTermMemoryRepository(
     suspend fun deleteMemories(ids: List<Long>) {
         memoryDao.deleteMemoriesByIds(ids)
     }
+
+    /**
+     * 获取当前激活记忆的一次性快照（供 AI 工具调用列出记忆使用）
+     */
+    suspend fun getActiveMemoriesSnapshot(limit: Int = 50): List<LongTermMemory> {
+        return memoryDao.getTopActiveMemories(limit)
+    }
 }

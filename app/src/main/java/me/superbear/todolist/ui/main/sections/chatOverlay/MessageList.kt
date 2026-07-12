@@ -28,6 +28,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.R
 import kotlinx.datetime.Clock
 import me.superbear.todolist.domain.entities.ChatMessage
 import me.superbear.todolist.domain.entities.MessageStatus
@@ -57,7 +59,7 @@ fun FullscreenMessageList(
                 .padding(bottom = inputBarHeight)
         ) {
             Text(
-                text = "No messages yet",
+                text = stringResource(R.string.chat_empty),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.align(Alignment.Center)

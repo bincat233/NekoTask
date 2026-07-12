@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.R
 import me.superbear.todolist.domain.entities.Priority
 
 /**
@@ -73,11 +75,11 @@ fun ManualAddSection(
                 modifier = Modifier
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Text("Manual Add Task")
+                Text(stringResource(R.string.manual_add_title))
                 TextField(
                     value = state.title,
                     onValueChange = onTitleChange,
-                    placeholder = { Text("What would you like to do?") },
+                    placeholder = { Text(stringResource(R.string.manual_add_title_placeholder)) },
                     textStyle = MaterialTheme.typography.titleMedium,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -86,7 +88,7 @@ fun ManualAddSection(
                 TextField(
                     value = state.description,
                     onValueChange = onDescriptionChange,
-                    placeholder = { Text("Description") },
+                    placeholder = { Text(stringResource(R.string.manual_add_description_placeholder)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 80.dp)
@@ -95,7 +97,7 @@ fun ManualAddSection(
                     IconButton(onClick = onDueDateClick) {
                         Icon(
                             Icons.Default.Event, 
-                            contentDescription = "Due date",
+                            contentDescription = stringResource(R.string.due_date),
                             tint = if (dateTimePickerState.selectedDueDateMs != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -110,7 +112,7 @@ fun ManualAddSection(
                         IconButton(onClick = onPriorityClick) {
                             Icon(
                                 Icons.Default.Flag,
-                                contentDescription = "Priority",
+                                contentDescription = stringResource(R.string.task_detail_priority),
                                 tint = priorityTint
                             )
                         }
@@ -123,7 +125,7 @@ fun ManualAddSection(
                                     Row(verticalAlignment = Alignment.CenterVertically) { 
                                         Icon(Icons.Default.Flag, contentDescription = null, tint = Color(0xFFE53935))
                                         Spacer(Modifier.width(8.dp))
-                                        Text("High") 
+                                        Text(stringResource(R.string.priority_high)) 
                                     } 
                                 },
                                 onClick = { onPrioritySelected(Priority.HIGH) }
@@ -133,7 +135,7 @@ fun ManualAddSection(
                                     Row(verticalAlignment = Alignment.CenterVertically) { 
                                         Icon(Icons.Default.Flag, contentDescription = null, tint = Color(0xFFFFA000))
                                         Spacer(Modifier.width(8.dp))
-                                        Text("Medium") 
+                                        Text(stringResource(R.string.priority_medium)) 
                                     } 
                                 },
                                 onClick = { onPrioritySelected(Priority.MEDIUM) }
@@ -143,7 +145,7 @@ fun ManualAddSection(
                                     Row(verticalAlignment = Alignment.CenterVertically) { 
                                         Icon(Icons.Default.Flag, contentDescription = null, tint = Color(0xFF43A047))
                                         Spacer(Modifier.width(8.dp))
-                                        Text("Low") 
+                                        Text(stringResource(R.string.priority_low)) 
                                     } 
                                 },
                                 onClick = { onPrioritySelected(Priority.LOW) }
@@ -153,7 +155,7 @@ fun ManualAddSection(
                                     Row(verticalAlignment = Alignment.CenterVertically) { 
                                         Icon(Icons.Default.Flag, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
                                         Spacer(Modifier.width(8.dp))
-                                        Text("None") 
+                                        Text(stringResource(R.string.priority_none)) 
                                     } 
                                 },
                                 onClick = { onPrioritySelected(Priority.DEFAULT) }
@@ -161,14 +163,14 @@ fun ManualAddSection(
                         }
                     }
                     IconButton(onClick = { /*TODO*/ }) {
-                        Icon(Icons.Filled.FormatListBulleted, contentDescription = "Subtasks")
+                        Icon(Icons.Filled.FormatListBulleted, contentDescription = stringResource(R.string.manual_add_subtasks_desc))
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     TextButton(onClick = onCancel) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.cancel))
                     }
                     Button(onClick = onSubmit, enabled = state.title.isNotBlank()) {
-                        Text("Send")
+                        Text(stringResource(R.string.manual_add_send))
                     }
                 }
             }

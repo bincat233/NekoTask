@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import me.superbear.todolist.R
 
 @Composable
@@ -61,7 +62,7 @@ fun CatDock(
             ) {
                 Image(
                     painter = painterResource(id = avatarResId),
-                    contentDescription = "Assistant Avatar",
+                    contentDescription = stringResource(R.string.assistant_avatar),
                     modifier = Modifier
                         .size(size * avatarScale)
                         .clip(CircleShape)
@@ -88,7 +89,7 @@ fun CatDock(
             Box(contentAlignment = Alignment.Center) {
                 Image(
                     painter = painterResource(id = avatarResId),
-                    contentDescription = "Assistant Avatar",
+                    contentDescription = stringResource(R.string.assistant_avatar),
                     modifier = Modifier
                         .size(avatarSize)
                         .clip(CircleShape)
@@ -142,7 +143,7 @@ fun ChatInputBar(
                 TextField(
                     value = text,
                     onValueChange = { text = it },
-                    placeholder = { Text("Tell AI what you want to do…") },
+                    placeholder = { Text(stringResource(R.string.ai_input_placeholder)) },
                     minLines = 1,
                     maxLines = 6,
                     modifier = Modifier.fillMaxWidth(),       // ❌ 不再用 .padding(end = reservedEnd)
@@ -172,7 +173,7 @@ fun ChatInputBar(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send"
+                            contentDescription = stringResource(R.string.send_message)
                         )
                     }
                 }

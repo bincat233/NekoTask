@@ -3,22 +3,37 @@ package me.superbear.todolist.ui.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.R
+import ai.koog.prompt.llm.LLMProvider
 import me.superbear.todolist.assistant.subtask.DivisionStrategy
 import me.superbear.todolist.domain.entities.LongTermMemory
+
+data class ProviderDisplayInfo(
+    val displayName: String,
+    val fallbackModels: List<String>
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,10 +41,21 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     settingsState: SettingsState = SettingsState(),
     onSettingsChange: (SettingsState) -> Unit = {},
+    selectedProvider: LLMProvider = LLMProvider.OpenAI,
+    onProviderSelect: (LLMProvider) -> Unit = {},
+    apiKey: String = "",
+    onApiKeySave: (LLMProvider, String) -> Unit = { _, _ -> },
+    selectedModel: String = "",
+    availableModels: List<String> = emptyList(),
+    isLoadingModels: Boolean = false,
+    onModelSelect: (String) -> Unit = {},
+    onRefreshModels: () -> Unit = {},
     onAddMemory: (String, String, Int, Boolean) -> Unit = { _, _, _, _ -> },
     onEditMemory: (LongTermMemory, String, String, Int, Boolean) -> Unit = { _, _, _, _, _ -> },
     onDeleteMemory: (LongTermMemory) -> Unit = {},
-    onToggleMemoryActive: (LongTermMemory, Boolean) -> Unit = { _, _ -> }
+    onToggleMemoryActive: (LongTermMemory, Boolean) -> Unit = { _, _ -> },
+    onLanguageChange: (String) -> Unit = {},
+    providerInfo: Map<LLMProvider, ProviderDisplayInfo> = emptyMap()
 ) {
     var currentSettings by remember { mutableStateOf(settingsState) }
     
@@ -42,13 +68,13 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 title = { 
-                    Text("设置") 
+                    Text(stringResource(R.string.settings_title)) 
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "返回"
+                            contentDescription = stringResource(R.string.back)
                         )
                     }
                 },
@@ -64,9 +90,42 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            // AI 供应商选择
+            ProviderSection(
+                selectedProvider = selectedProvider,
+                onProviderSelect = onProviderSelect,
+                providerInfo = providerInfo
+            )
+
+            // 语言设置
+            LanguageSection(
+                currentLanguage = currentSettings.currentLanguage,
+                onLanguageChange = onLanguageChange
+            )
+
+            // API 密钥设置
+            ApiKeySection(
+                provider = selectedProvider,
+                apiKey = apiKey,
+                onApiKeySave = onApiKeySave,
+                providerInfo = providerInfo
+            )
+
+            // 模型选择
+            val fallback = providerInfo[selectedProvider]?.fallbackModels ?: emptyList()
+            ModelSection(
+                selectedModel = selectedModel,
+                availableModels = availableModels,
+                isLoading = isLoadingModels,
+                onModelSelect = onModelSelect,
+                onRefresh = onRefreshModels,
+                fallbackModels = fallback
+            )
+
             // AI子任务划分设置
             AISubtaskDivisionSettings(
                 settings = currentSettings,
@@ -117,6 +176,254 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun LanguageSection(
+    currentLanguage: String,
+    onLanguageChange: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.settings_language_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            val languages = listOf(
+                "auto" to stringResource(R.string.language_auto),
+                "en" to stringResource(R.string.language_en),
+                "zh" to stringResource(R.string.language_zh)
+            )
+
+            // 提取基础标签，例如将 "zh-CN" 简化为 "zh" 以便匹配
+            val baseLanguage = currentLanguage.split("-").first().lowercase()
+
+            languages.forEach { (tag, label) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = (tag == "auto" && currentLanguage == "auto") || (tag != "auto" && baseLanguage == tag),
+                            onClick = { onLanguageChange(tag) }
+                        )
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = (tag == "auto" && currentLanguage == "auto") || (tag != "auto" && baseLanguage == tag),
+                        onClick = { onLanguageChange(tag) }
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProviderSection(
+    selectedProvider: LLMProvider,
+    onProviderSelect: (LLMProvider) -> Unit,
+    providerInfo: Map<LLMProvider, ProviderDisplayInfo>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.settings_ai_provider),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            providerInfo.forEach { (provider, info) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = selectedProvider == provider,
+                            onClick = { onProviderSelect(provider) }
+                        )
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = selectedProvider == provider,
+                        onClick = { onProviderSelect(provider) }
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(info.displayName, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelSection(
+    selectedModel: String,
+    availableModels: List<String>,
+    isLoading: Boolean,
+    onModelSelect: (String) -> Unit,
+    onRefresh: () -> Unit,
+    fallbackModels: List<String>
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val displayModels = availableModels.ifEmpty { fallbackModels }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.settings_model_title), style = MaterialTheme.typography.titleMedium)
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    IconButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.settings_model_refresh),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                OutlinedTextField(
+                    value = selectedModel,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    label = { Text(stringResource(R.string.settings_model_select)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    displayModels.forEach { model ->
+                        DropdownMenuItem(
+                            text = { Text(model) },
+                            onClick = {
+                                onModelSelect(model)
+                                expanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = if (availableModels.isNotEmpty())
+                    stringResource(R.string.settings_model_count_msg, availableModels.size, "OpenAI")
+                else
+                    stringResource(R.string.settings_model_fallback_msg, "OpenAI"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ApiKeySection(
+    provider: LLMProvider,
+    apiKey: String,
+    onApiKeySave: (LLMProvider, String) -> Unit,
+    providerInfo: Map<LLMProvider, ProviderDisplayInfo>
+) {
+    val displayName = providerInfo[provider]?.displayName ?: provider.display
+    var draft by remember(apiKey) { mutableStateOf(apiKey) }
+    var visible by remember { mutableStateOf(false) }
+    val changed = draft.trim() != apiKey.trim() && draft.isNotBlank()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.settings_api_key_title, displayName),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.settings_api_key_label, displayName)) },
+                singleLine = true,
+                visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { visible = !visible }) {
+                        Icon(
+                            imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (visible) stringResource(R.string.hide) else stringResource(R.string.show)
+                        )
+                    }
+                }
+            )
+
+            Text(
+                text = stringResource(R.string.settings_api_key_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Button(
+                onClick = { onApiKeySave(provider, draft) },
+                enabled = changed,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        }
+    }
+}
+
+@Composable
 private fun AISubtaskDivisionSettings(
     settings: SettingsState,
     onSettingsChange: (SettingsState) -> Unit
@@ -132,7 +439,7 @@ private fun AISubtaskDivisionSettings(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "AI子任务划分",
+                text = stringResource(R.string.settings_ai_division_title),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -153,11 +460,11 @@ private fun AISubtaskDivisionSettings(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "启用AI智能划分",
+                        text = stringResource(R.string.settings_ai_division_enable),
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Text(
-                        text = if (settings.useAI) "基于任务内容智能生成子任务" else "使用预设模板生成子任务",
+                        text = if (settings.useAI) stringResource(R.string.settings_ai_division_enable_desc) else stringResource(R.string.settings_ai_division_template_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -166,7 +473,7 @@ private fun AISubtaskDivisionSettings(
             
             // 划分策略选择
             Text(
-                text = "划分策略",
+                text = stringResource(R.string.settings_ai_strategy_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -211,7 +518,7 @@ private fun AISubtaskDivisionSettings(
             
             // 最大子任务数量
             Text(
-                text = "最大子任务数量: ${settings.maxSubtasks}",
+                text = stringResource(R.string.settings_max_subtasks_title, settings.maxSubtasks),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -227,7 +534,7 @@ private fun AISubtaskDivisionSettings(
             )
             
             Text(
-                text = "控制每次划分生成的子任务数量上限",
+                text = stringResource(R.string.settings_max_subtasks_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -239,22 +546,24 @@ private fun AISubtaskDivisionSettings(
 /**
  * 获取策略显示名称
  */
+@Composable
 private fun getStrategyDisplayName(strategy: DivisionStrategy): String {
     return when (strategy) {
-        DivisionStrategy.DETAILED -> "详细划分"
-        DivisionStrategy.BALANCED -> "平衡划分"
-        DivisionStrategy.SIMPLIFIED -> "简化划分"
+        DivisionStrategy.DETAILED -> stringResource(R.string.strategy_detailed)
+        DivisionStrategy.BALANCED -> stringResource(R.string.strategy_balanced)
+        DivisionStrategy.SIMPLIFIED -> stringResource(R.string.strategy_simplified)
     }
 }
 
 /**
  * 获取策略描述
  */
+@Composable
 private fun getStrategyDescription(strategy: DivisionStrategy): String {
     return when (strategy) {
-        DivisionStrategy.DETAILED -> "生成更多细粒度的子任务，适合复杂项目"
-        DivisionStrategy.BALANCED -> "适中的子任务数量和粒度，推荐选择"
-        DivisionStrategy.SIMPLIFIED -> "生成较少的高层次子任务，适合简单任务"
+        DivisionStrategy.DETAILED -> stringResource(R.string.strategy_detailed_desc)
+        DivisionStrategy.BALANCED -> stringResource(R.string.strategy_balanced_desc)
+        DivisionStrategy.SIMPLIFIED -> stringResource(R.string.strategy_simplified_desc)
     }
 }
 
@@ -285,7 +594,7 @@ private fun LongTermMemorySettings(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "AI助手长期记忆",
+                    text = stringResource(R.string.memory_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -300,13 +609,13 @@ private fun LongTermMemorySettings(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "添加记忆"
+                        contentDescription = stringResource(R.string.memory_add_content_desc)
                     )
                 }
             }
             
             Text(
-                text = "管理AI助手的长期记忆，这些信息将在每次对话中提供给AI",
+                text = stringResource(R.string.memory_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -315,7 +624,7 @@ private fun LongTermMemorySettings(
             
             if (settings.longTermMemories.isEmpty()) {
                 Text(
-                    text = "暂无记忆，点击右上角 + 按钮添加",
+                    text = stringResource(R.string.memory_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -430,7 +739,7 @@ private fun MemoryItem(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Edit,
-                            contentDescription = "编辑记忆",
+                            contentDescription = stringResource(R.string.memory_edit_content_desc),
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -441,7 +750,7 @@ private fun MemoryItem(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = "删除记忆",
+                            contentDescription = stringResource(R.string.memory_delete_content_desc),
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(16.dp)
                         )

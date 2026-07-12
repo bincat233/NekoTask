@@ -37,7 +37,7 @@ class TodoRepository(private val context: Context) {
     private val seedManager = SeedManager(context)
 
     // Room database instance, initialized lazily
-    private val database: AppDatabase by lazy {
+    internal val database: AppDatabase by lazy {
         val builder = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
