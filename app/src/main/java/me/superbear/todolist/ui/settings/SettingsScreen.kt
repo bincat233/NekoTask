@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.R
 import ai.koog.prompt.llm.LLMProvider
 import me.superbear.todolist.assistant.subtask.DivisionStrategy
@@ -55,7 +56,8 @@ fun SettingsScreen(
     onDeleteMemory: (LongTermMemory) -> Unit = {},
     onToggleMemoryActive: (LongTermMemory, Boolean) -> Unit = { _, _ -> },
     onLanguageChange: (String) -> Unit = {},
-    providerInfo: Map<LLMProvider, ProviderDisplayInfo> = emptyMap()
+    providerInfo: Map<LLMProvider, ProviderDisplayInfo> = emptyMap(),
+    onResetSampleData: () -> Unit = {}
 ) {
     var currentSettings by remember { mutableStateOf(settingsState) }
     
@@ -147,6 +149,11 @@ fun SettingsScreen(
                 onDeleteMemory = onDeleteMemory,
                 onToggleMemoryActive = onToggleMemoryActive
             )
+
+            // 开发者选项（仅 debug 包）
+            if (BuildConfig.DEBUG) {
+                DeveloperSection(onResetSampleData = onResetSampleData)
+            }
         }
         
         // 长期记忆编辑对话框
@@ -758,5 +765,67 @@ private fun MemoryItem(
                 }
             }
         }
+    }
+}
+
+/**
+ * Debug-only developer settings. Never shown in release builds (gated by BuildConfig.DEBUG
+ * at the call site) - lets a developer wipe all tasks and re-seed the built-in sample data
+ * without reinstalling the app.
+ */
+@Composable
+private fun DeveloperSection(
+    onResetSampleData: () -> Unit
+) {
+    var showConfirmDialog by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.dev_section_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.dev_reset_sample_data_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = { showConfirmDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text(stringResource(R.string.dev_reset_sample_data))
+            }
+        }
+    }
+
+    if (showConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            title = { Text(stringResource(R.string.dev_reset_sample_data_confirm_title)) },
+            text = { Text(stringResource(R.string.dev_reset_sample_data_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmDialog = false
+                    onResetSampleData()
+                }) {
+                    Text(stringResource(R.string.dev_reset_sample_data))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 }

@@ -95,6 +95,13 @@
     <string name="memory_edit_content_desc">编辑记忆</string>
     <string name="memory_add_content_desc">添加记忆</string>
 
+    <!-- 开发者选项（仅 debug 包） -->
+    <string name="dev_section_title">开发者选项</string>
+    <string name="dev_reset_sample_data">重置示例数据</string>
+    <string name="dev_reset_sample_data_desc">删除所有任务并重新生成内置示例数据。仅 debug 包可见。</string>
+    <string name="dev_reset_sample_data_confirm_title">确定要重置示例数据吗？</string>
+    <string name="dev_reset_sample_data_confirm_body">这会删除当前所有任务并重新生成内置示例数据，且无法撤销。</string>
+
     <!-- 记忆类别 -->
     <string name="cat_general">通用</string>
     <string name="cat_preferences">偏好设置</string>

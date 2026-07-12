@@ -87,7 +87,7 @@ private fun getCurrentAppMode(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    viewModel: MainViewModel = viewModel()
+    viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)
 ) {
     // 从 ViewModel 订阅 UI 状态（StateFlow -> Compose 状态）
     val state by viewModel.appState.collectAsState()
@@ -378,7 +378,8 @@ fun MainScreen(
                                 LongTermMemoryEvent.ToggleMemoryActive(memory, isActive)
                             ))
                         },
-                        onLanguageChange = viewModel::updateLanguage
+                        onLanguageChange = viewModel::updateLanguage,
+                        onResetSampleData = viewModel::resetSampleData
                     )
                 }
             }

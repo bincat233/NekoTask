@@ -18,7 +18,7 @@ import me.superbear.todolist.domain.entities.Sender
 class TodoAgent(
     private val repository: TodoRepository,
     private val memoryRepository: LongTermMemoryRepository
-) {
+) : ChatAgent {
     private var openAIKey: String = ""
     private var deepSeekKey: String = ""
     private var selectedProvider: LLMProvider = LLMProvider.OpenAI
@@ -42,7 +42,7 @@ with its ID instead of adding a duplicate. Use list_memories if you need to look
 Don't save trivial or one-off details.
 """.trimIndent()
 
-    fun buildExecutor(): PromptExecutor {
+    override fun buildExecutor(): PromptExecutor {
         val pairs = buildList {
             if (openAIKey.isNotBlank()) {
                 add(
@@ -76,7 +76,7 @@ Don't save trivial or one-off details.
         )
     }
 
-    fun setApiKey(provider: LLMProvider, key: String) {
+    override fun setApiKey(provider: LLMProvider, key: String) {
         when (provider) {
             LLMProvider.OpenAI -> openAIKey = key
             LLMProvider.DeepSeek -> deepSeekKey = key
@@ -84,7 +84,7 @@ Don't save trivial or one-off details.
         }
     }
 
-    fun selectProvider(provider: LLMProvider) {
+    override fun selectProvider(provider: LLMProvider) {
         selectedProvider = provider
         selectedModel = when (provider) {
             LLMProvider.OpenAI -> OpenAIModels.Chat.GPT4o
@@ -97,7 +97,7 @@ Don't save trivial or one-off details.
         selectedModel = model
     }
 
-    fun selectModelByName(name: String) {
+    override fun selectModelByName(name: String) {
         val known = when (selectedProvider) {
             LLMProvider.OpenAI -> listOf(
                 LLModel(provider = LLMProvider.OpenAI, id = "gpt-5"),
@@ -121,18 +121,18 @@ Don't save trivial or one-off details.
             ?: LLModel(provider = selectedProvider, id = name)
     }
 
-    fun getCurrentModel(): LLModel = selectedModel
+    override fun getCurrentModel(): LLModel = selectedModel
 
     fun getCurrentModelName(): String = selectedModel.id
 
     fun getCurrentProvider(): LLMProvider = selectedProvider
 
-    suspend fun chat(
+    override suspend fun chat(
         userMessage: String,
         history: List<ChatMessage>,
         todoState: String,
-        memoryContext: String = "",
-        language: String = "en"
+        memoryContext: String,
+        language: String
     ): Result<String> {
         return try {
             val agent = buildAgent(language)

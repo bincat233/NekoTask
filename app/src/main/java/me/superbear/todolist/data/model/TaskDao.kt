@@ -219,11 +219,17 @@ interface TaskDao {
     /**
      * Counts the total number of tasks in the database.
      * Used to check if seeding is needed.
-     * 
+     *
      * @return Total task count
      */
     @Query("SELECT COUNT(*) FROM tasks")
     suspend fun getTaskCount(): Int
+
+    /**
+     * Deletes all tasks. Used by the debug-only sample data reset.
+     */
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAll()
 
     /**
      * Seeds tasks from JSON assets in a single transaction.

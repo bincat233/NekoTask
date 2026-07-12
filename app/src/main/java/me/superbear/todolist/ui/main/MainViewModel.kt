@@ -4,7 +4,10 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,7 +27,9 @@ import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import me.superbear.todolist.R
 import me.superbear.todolist.BuildConfig
+import me.superbear.todolist.assistant.ChatAgent
 import me.superbear.todolist.assistant.TodoAgent
+import me.superbear.todolist.data.SeedManager
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.domain.entities.ChatMessage
 import me.superbear.todolist.domain.entities.MessageStatus
@@ -54,11 +59,13 @@ import me.superbear.todolist.ui.settings.SettingsState
  *
  * Now uses Koog AIAgent via TodoAgent for AI chat and tools.
  */
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class MainViewModel(
+    application: Application,
+    private val todoRepository: TodoRepository,
+    private val longTermMemoryRepository: LongTermMemoryRepository,
+    private val todoAgent: ChatAgent
+) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-    private val todoRepository = TodoRepository(application)
-    private val longTermMemoryRepository = LongTermMemoryRepository(todoRepository.database.longTermMemoryDao())
-    private val todoAgent = TodoAgent(todoRepository, longTermMemoryRepository)
 
     private val _selectedProvider = MutableStateFlow<LLMProvider>(LLMProvider.OpenAI)
     val selectedProvider: StateFlow<LLMProvider> = _selectedProvider.asStateFlow()
@@ -117,7 +124,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _appState = MutableStateFlow(
         AppState(
-            useMockAssistant = BuildConfig.USE_MOCK_ASSISTANT,
             executeAssistantActions = true
         )
     )
@@ -212,6 +218,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val info = PROVIDER_INFO[_selectedProvider.value]
         if (info != null) {
             _availableModels.value = info.fallbackModels
+        }
+    }
+
+    /**
+     * Debug-only developer setting: wipes all tasks and re-seeds sample data.
+     * No-op in release builds (see [TodoRepository.resetSampleData]).
+     */
+    fun resetSampleData() {
+        viewModelScope.launch {
+            todoRepository.resetSampleData()
         }
     }
 
@@ -350,9 +366,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is AppEvent.TaskDetail -> handleTaskDetailEvent(event.event)
             is AppEvent.SubtaskDivision -> handleSubtaskDivisionEvent(event.event)
             is AppEvent.LongTermMemory -> handleLongTermMemoryEvent(event.event)
-            is AppEvent.SetUseMockAssistant -> {
-                _appState.update { it.copy(useMockAssistant = event.useMock) }
-            }
             is AppEvent.SetExecuteAssistantActions -> {
                 _appState.update { it.copy(executeAssistantActions = event.execute) }
             }
@@ -885,6 +898,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             is LongTermMemoryEvent.LoadMemories -> {
                 // Flow based, no explicit load needed if UI collects
+            }
+        }
+    }
+
+    companion object {
+        /**
+         * Production wiring for [MainViewModel]. Compose's default [androidx.lifecycle.viewmodel.compose.viewModel]
+         * factory only knows how to satisfy a single-`Application` constructor via reflection, so once
+         * MainViewModel takes real dependencies it needs an explicit factory instead - this also is the seam
+         * that lets Compose UI tests build a MainViewModel with a fake [ChatAgent].
+         */
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val application = checkNotNull(this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
+                val seedManager = if (BuildConfig.DEBUG) SeedManager(application) else null
+                val todoRepository = TodoRepository(application, seedManager)
+                val longTermMemoryRepository = LongTermMemoryRepository(todoRepository.database.longTermMemoryDao())
+                MainViewModel(
+                    application = application,
+                    todoRepository = todoRepository,
+                    longTermMemoryRepository = longTermMemoryRepository,
+                    todoAgent = TodoAgent(todoRepository, longTermMemoryRepository)
+                )
             }
         }
     }

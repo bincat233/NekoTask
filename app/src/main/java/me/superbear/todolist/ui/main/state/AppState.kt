@@ -27,6 +27,5 @@ data class AppState(
     val dateTimePickerState: DateTimePickerState = DateTimePickerState(),
     val priorityState: PriorityState = PriorityState(),
     val taskDetailState: TaskDetailState = TaskDetailState(),
-    val useMockAssistant: Boolean = true,
     val executeAssistantActions: Boolean = true
 )

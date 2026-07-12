@@ -153,4 +153,14 @@ class SeedManager(private val context: Context) {
     fun resetSeedingFlagForTesting() {
         prefs.edit().remove(SEED_DONE_KEY).apply()
     }
+
+    /**
+     * Wipes all tasks and re-seeds sample data. Backs the debug-only
+     * "reset sample data" developer setting.
+     */
+    suspend fun resetAndReseed(database: AppDatabase) {
+        database.taskDao().deleteAll()
+        resetSeedingFlagForTesting()
+        seedWithSampleData(database)
+    }
 }

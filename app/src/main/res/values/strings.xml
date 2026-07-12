@@ -95,6 +95,13 @@
     <string name="memory_edit_content_desc">Edit memory</string>
     <string name="memory_add_content_desc">Add memory</string>
 
+    <!-- Developer (debug builds only) -->
+    <string name="dev_section_title">Developer</string>
+    <string name="dev_reset_sample_data">Reset Sample Data</string>
+    <string name="dev_reset_sample_data_desc">Delete all tasks and re-seed the built-in sample data. Debug builds only.</string>
+    <string name="dev_reset_sample_data_confirm_title">Reset sample data?</string>
+    <string name="dev_reset_sample_data_confirm_body">This deletes all current tasks and re-seeds the built-in sample data. This cannot be undone.</string>
+
     <!-- Memory Categories -->
     <string name="cat_general">General</string>
     <string name="cat_preferences">Preferences</string>

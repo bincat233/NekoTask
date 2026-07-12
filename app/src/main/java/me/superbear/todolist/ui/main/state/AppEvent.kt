@@ -88,6 +88,5 @@ sealed class AppEvent {
     data class TaskDetail(val event: TaskDetailEvent) : AppEvent()
     data class SubtaskDivision(val event: SubtaskDivisionEvent) : AppEvent()
     data class LongTermMemory(val event: LongTermMemoryEvent) : AppEvent()
-    data class SetUseMockAssistant(val useMock: Boolean) : AppEvent()
     data class SetExecuteAssistantActions(val execute: Boolean) : AppEvent()
 }

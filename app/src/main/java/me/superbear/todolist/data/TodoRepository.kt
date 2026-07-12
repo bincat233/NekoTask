@@ -31,10 +31,10 @@ import me.superbear.todolist.domain.entities.Priority
  * with automatic seeding from JSON assets on first launch.
  * Provides reactive Flow-based data access for UI components.
  */
-class TodoRepository(private val context: Context) {
-
-    // Seeding manager for initial data population
-    private val seedManager = SeedManager(context)
+class TodoRepository(
+    private val context: Context,
+    private val seedManager: SeedManager? = null
+) {
 
     // Room database instance, initialized lazily
     internal val database: AppDatabase by lazy {
@@ -81,10 +81,10 @@ class TodoRepository(private val context: Context) {
             Log.w("TodoRepository", "FORCE_DELETE_DB is true, deleting database.")
             context.deleteDatabase("todolist_database")
             // Also reset the seeding flag so database will be re-seeded
-            seedManager.resetSeedingFlagForTesting()
+            seedManager?.resetSeedingFlagForTesting()
         }
 
-        // Initialize database and perform seeding if needed
+        // Initialize database and perform seeding if needed (debug-only, opt-in via seedManager)
         initializeDatabase()
 
         // Bridge Room Flow to StateFlow for legacy compatibility
@@ -96,15 +96,17 @@ class TodoRepository(private val context: Context) {
     }
 
     /**
-     * Initialize database and perform seeding if needed.
-     * This replaces the old JSON loading approach.
+     * Seed the database with sample data if a [seedManager] was supplied and it's needed.
+     * Production wiring only supplies a [SeedManager] for debug builds; release builds and
+     * tests that don't pass one get no seeding at all.
      */
     private fun initializeDatabase() {
+        val seeder = seedManager ?: return
         repositoryScope.launch {
             try {
-                if (seedManager.needsSeeding(database)) {
+                if (seeder.needsSeeding(database)) {
                     Log.d("TodoRepository", "Database empty, seeding with built-in sample data (bypassing JSON)...")
-                    seedManager.seedWithSampleData(database)
+                    seeder.seedWithSampleData(database)
                     Log.d("TodoRepository", "Database sample seeding completed successfully")
                 } else {
                     Log.d("TodoRepository", "Database already seeded, skipping")
@@ -113,6 +115,15 @@ class TodoRepository(private val context: Context) {
                 Log.e("TodoRepository", "Failed to initialize database", e)
             }
         }
+    }
+
+    /**
+     * Wipes all tasks and re-seeds sample data. No-op if no [seedManager] was supplied
+     * (release builds, tests) — backs the debug-only "reset sample data" developer setting.
+     */
+    suspend fun resetSampleData() {
+        val seeder = seedManager ?: return
+        seeder.resetAndReseed(database)
     }
 
     /**
