@@ -44,6 +44,7 @@ This document outlines the core architecture, data flows, and AI integration lay
 - Prompt context: chat injects `CURRENT_TODO_STATE` plus optional `MEMORY CONTEXT`, and uses `Locale.getDefault().language` to request Chinese or English replies.
 - `ChatAgent` is the chat-only seam. `LlmRuntime` is the provider/model/executor seam used by Settings and subtask division.
 - Guardrail: do not restore the old strict JSON action client. Current action execution is Koog tool calling.
+- Chat UI currently only renders plain text; see `AGENT_UI_ROADMAP.md` for planned structured interactions (tool-call progress, retry, interactive choices, confirm/undo for destructive tool calls).
 
 ## Subtask Division
 
