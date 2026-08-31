@@ -470,7 +470,11 @@ fun MainScreen(
                     onEvent(MainScreenIntent.DeleteTask(id))
                 }
             },
-            isSubtaskDivisionLoading = state.subtaskDivisionState.isSubtaskDivisionLoading
+            isSubtaskDivisionLoading = state.subtaskDivisionState.isSubtaskDivisionLoading,
+            subtaskDivisionError = state.subtaskDivisionState.errorMessage,
+            onDismissSubtaskDivisionError = {
+                onEvent(MainScreenIntent.DismissSubtaskDivisionError)
+            }
         )
 
         

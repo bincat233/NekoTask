@@ -29,7 +29,6 @@ import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.R
 import ai.koog.prompt.llm.LLMProvider
 import me.superbear.todolist.assistant.search.SearchCapabilityKind
-import me.superbear.todolist.assistant.search.isAvailable
 import me.superbear.todolist.assistant.subtask.DivisionStrategy
 import me.superbear.todolist.domain.entities.LongTermMemory
 
@@ -136,7 +135,6 @@ fun SettingsScreen(
 
             // 网页搜索设置
             SearchProviderSection(
-                currentLlmProvider = selectedProvider,
                 selectedCapability = selectedSearchCapability,
                 onCapabilitySelect = onSearchCapabilitySelect,
                 searchApiKey = searchApiKey,
@@ -386,27 +384,23 @@ private fun ModelSection(
 @Composable
 private fun SearchCapabilityKind.displayName(): String = when (this) {
     SearchCapabilityKind.TAVILY -> stringResource(R.string.settings_search_capability_tavily)
-    SearchCapabilityKind.OPENAI_NATIVE -> stringResource(R.string.settings_search_capability_openai_native)
 }
 
 /**
  * Mirrors [ModelSection]'s ExposedDropdownMenuBox interaction pattern (not the same composable —
  * that one is tightly bound to selectedModel/availableModels/isLoadingModels/onRefresh semantics
- * that don't fit a static local list). The option list is filtered live by
- * [SearchCapabilityKind.isAvailable] against the current chat LLM provider, so e.g. "OpenAI 原生搜索"
- * disappears whenever DeepSeek is selected instead of being shown as a choice that can't work.
+ * that don't fit a static local list).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchProviderSection(
-    currentLlmProvider: LLMProvider,
     selectedCapability: SearchCapabilityKind,
     onCapabilitySelect: (SearchCapabilityKind) -> Unit,
     searchApiKey: String,
     onSearchApiKeySave: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val availableCapabilities = SearchCapabilityKind.entries.filter { it.isAvailable(currentLlmProvider) }
+    val availableCapabilities = SearchCapabilityKind.entries
 
     Card(
         modifier = Modifier.fillMaxWidth(),

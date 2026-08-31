@@ -31,6 +31,7 @@ class SubtaskDivisionService(
         context: String? = null,
         useAI: Boolean = true
     ): Result<SubtaskDivisionResponse> {
+        Log.d("DIAG", "[DIAG] generateSubtaskSuggestions ENTER: task='${task.title}' useAI=$useAI strategy=${strategy ?: "default"}")
         val config = SubtaskDivisionConfigManager.getConfig()
 
         val request = SubtaskDivisionRequest(
@@ -60,6 +61,7 @@ class SubtaskDivisionService(
         useAI: Boolean = true,
         forceCreate: Boolean = false
     ): Result<SubtaskDivisionResult> {
+        Log.d("DIAG", "[DIAG] divideAndCreateSubtasks ENTER: task='${parentTask.title}' useAI=$useAI forceCreate=$forceCreate")
         val config = SubtaskDivisionConfigManager.getConfig()
 
         val suggestionResult = generateSubtaskSuggestions(
@@ -69,6 +71,8 @@ class SubtaskDivisionService(
             context = context,
             useAI = useAI
         )
+
+        Log.d("DIAG", "[DIAG] divideAndCreateSubtasks: generateSubtaskSuggestions returned isSuccess=${suggestionResult.isSuccess}")
 
         return suggestionResult.fold(
             onSuccess = { response ->

@@ -60,6 +60,8 @@ OPENAI_API_KEY=...
 
 - `androidx.lifecycle:2.11.0` and `androidx.core:1.19.0` or newer require `compileSdk >= 37`.
 - Even with an all-Compose UI, if `themes.xml` inherits from `Theme.Material3.*`, keep `com.google.android.material:material`; otherwise AAPT resource linking may fail.
+- `minSdk = 26` (raised from 23 in July 2026). Root cause: `ai.koog:agents-core-android`'s hard dependency on `ai.koog:serialization-jackson` pulls in `jackson-module-kotlin:2.21.3`, whose Kotlin value-class boxing/unboxing codegen uses `MethodHandle.invokeExact` — D8 refuses to dex that below API 26. This is a real bytecode constraint, not a manifest-declared minSdk that can be worked around with `tools:overrideLibrary`.
+- **Koog dependency version pitfall**: `app/build.gradle.kts` pins Koog artifacts to an exact version (currently `1.0.0-SNAPSHOT`, matching a locally `publishToMavenLocal`'d build in `~/.m2/repository/ai/koog/`). If this ever gets changed to a bare `1.0.0` (no `-SNAPSHOT`), Gradle will silently resolve a *different*, independently-published `1.0.0` artifact from a remote repo instead of the local snapshot — same version-looking string, different actual code. This was discovered when the remote `1.0.0`'s AARs declared `minSdkVersion=35` in their manifests while the local snapshot's declared `23`. Always verify which repo a Koog artifact actually resolved from (`./gradlew :app:dependencies --configuration debugRuntimeClasspath | grep ai.koog`) before trusting its declared minSdk — an AAR's `<uses-sdk>` value is asserted by the publisher, never verified by dexing, since dexing only happens when an app assembles, not when a library publishes.
 
 ### Initialization Order
 
@@ -70,6 +72,18 @@ OPENAI_API_KEY=...
 
 - Koog `requestLLMStreaming()` does not append the streamed assistant response back into the prompt history for you. If a streaming agent can call tools, convert the stream to a message response and explicitly `appendPrompt { message(response) }` before the next LLM/tool-result step. Otherwise OpenAI-compatible APIs can reject later requests because `tool` role messages no longer follow a recorded assistant `tool_calls` message.
 - When adapting a stream into `callbackFlow`, do not `close(e)` after emitting a user-visible error event unless the collector is expected to fail. Closing with the throwable rethrows into the collecting coroutine and can crash the app even when the UI handled the error state.
+
+### Agent Trajectory Logging
+
+- `TodoAgent.AgentTraceFeature` (private object in `TodoAgent.kt`) logs every node's input/output and every tool call's args/result under logcat tag `AgentTrace`, using Koog's pipeline hooks (`interceptNodeExecutionStarting/Completed/Failed`, `interceptToolCallStarting/Completed/Failed`) rather than hand-added logging inside each node. It's installed unconditionally in `buildAgent()`, so it covers both `chat()` (built-in `singleRunStrategy()`) and `chatStreaming()` (custom `streamingSingleRunStrategy()`) without duplicating logic per strategy.
+- Node-level logging deliberately skips `__start__`, `__finish__`, and any node whose name contains `ExecuteTool`: the first two are pure passthrough duplicates of the adjacent real node, and the tool-execution node's `ReceivedToolResults.toString()` includes a large static `toolDescription` field that eats the whole truncation budget before reaching the actually-useful `output`/`result` fields. The `tool=... CALL/RESULT` lines from the tool-call intercepts already cover that information more cleanly.
+- If you need to inspect a real agent run without the Android app UI, this is the fastest path — no need to build a separate harness first.
+
+### Koog ToolSet Parameter Types
+
+- **Never use `String` as a parameter type for structured/list data in a `ToolSet` method.** When the LLM calls the tool, the whole parameter payload is already a JSON object. Koog's `JSONSerializer` will try to deserialise the LLM-supplied JSON array/object *directly* into the declared Kotlin type. If the declared type is `String` but the LLM (correctly) sends a JSON array, deserialization fails silently, the tool returns an error string, and the LLM retries until `AIAgentMaxNumberOfIterationsReachedException` is thrown — leaving `lastResult == null` and no subtasks created.
+- **Fix**: declare the parameter as a typed list or data class (e.g., `subtasks: List<SubtaskInput>`) and annotate the data class with `@Serializable`. Koog will then deserialise the LLM payload natively without any manual `kotlinx.serialization` parsing inside the tool body.
+- This was the root cause of the `DivideTaskToolSet.divide_task` bug (July 2026). See `docs/SUBTASK_DIVISION_BUG_REPORT.md`.
 
 ### Instrumentation Tests
 

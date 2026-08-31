@@ -38,16 +38,10 @@
 |---|---|---|
 | `web_search` | 联网搜索一个 query,最多返回 10 条 | 返回 `SearchResponse` JSON(`{query, results, error}`),`results[].id` 是结果在列表里的 1-based 位置,供模型引用来源 |
 
-- `SearchCapabilityKind`(`TAVILY`/`OPENAI_NATIVE`)是流经 Settings/持久化/UI 的轻量标识符;
-  `SearchCapability`(密封类型,`ExternalApi(provider)`/`OpenAiNativeSearch`)是 `TodoAgent` 内部
-  才用的执行期表示,由 `TodoAgent` 自己把 kind 解析成真正的 provider 实例——这个拆分是因为
-  `SettingsCoordinator` 不持有任何 `SearchProvider` 实例,没法直接构造出一个合法的
-  `SearchCapability.ExternalApi(...)` 值。
-- `SearchCapabilityKind.isAvailable(currentLlmProvider)` 是唯一的可用性判断,Settings 下拉列表
-  过滤和 `TodoAgent.buildAgent()` 里的防御性二次检查都调这一个函数,避免两处判断逻辑各写一份、
-  以后改一处忘了改另一处。
-- `OPENAI_NATIVE` 目前是 stub——选中后 `web_search` 工具不会被注册,系统提示也不会提它,详见下面
-  "已知后续工作"第 4 条。
+- `SearchCapabilityKind` 是流经 Settings/持久化/UI 的轻量标识符,目前只有 `TAVILY` 一个值。更多
+  `ExternalApi` provider(Brave/SearXNG/Exa/Jina/Firecrawl)接入时,各自新增一个枚举值即可,见下面
+  "已知后续工作"。曾经还有一个 `OPENAI_NATIVE` stub 值和配套的 `SearchCapability` 密封类型/
+  `isAvailable(currentLlmProvider)` 可用性判断,已确认不可实现并移除,原因见下面第 4 条。
 
 ## 批量操作:`BatchResult`
 
@@ -111,17 +105,33 @@
      和枚举而非数字的优先级/状态字段(避免数字歧义)。
 4. **`web_search` 工具(联网搜索,注意跟上面第 3 条"任务列表 search/filter"是两回事)**:
    `SearchToolSet`/`TavilySearchProvider`/`SearchCapabilityKind` 已实现,v1 只接了 Tavily 一家。
-   - **实现 `OPENAI_NATIVE`(目前是 stub)**:需要在 `TodoAgent.kt` 里构造 `OpenAIResponsesParams`
-     并在 tools 数组里声明托管的 `{"type": "web_search"}` 工具(现状从不显式构造自定义
-     `LLMParams`,需要改造)。更重要的是要实测验证:Koog 的 `AIAgent` 事件管线会不会把
-     `WebSearchToolCall`(`OpenAIResponsesAPI.kt` 里已经建模的 wire 类型)当成跟 `ToolRegistry`
-     里注册的工具一样、触发一次可见的 tool-call 事件——如果验证下来是不可见的(跟 Chat
-     Completions 那条路径一样只在 `annotations` 里悄悄出现),要重新权衡这个功能是否值得做,
-     还是继续只用 Tavily。
+   - **`OPENAI_NATIVE`(OpenAI 托管 `web_search_preview` 工具)——已确认不可行,已移除,不是继续
+     stub**:对照本 app 实际依赖的 `ai.koog` 1.0.0 source jar 反编译验证,并与 Koog 最新 `develop`
+     tip(commit `164f57a71`,2026-06-30)和 `release/1.0.1` 分支交叉核对,结论一致:
+     - `OpenAIResponsesTool`(内含 `WebSearchPreview`)在 Koog 的 OpenAI client 模块里是
+       `internal` 的,不是公开 API,应用代码构造不出来。
+     - `OpenAIResponsesParams` 根本没有声明托管工具的字段。
+     - 唯一的理论逃生舱——把工具声明塞进 `LLMParams.additionalProperties`,指望 Koog 的
+       `AdditionalPropertiesFlatteningSerializer` 合并进请求顶层——结构性走不通:该 serializer
+       明确跳过合并任何请求体里已存在的 key,而我们的 `tools` 数组永远非空(`TaskToolSet`/
+       `MemoryToolSet` 总是被注册),所以永远没法借这条路径往 `tools` 里追加托管工具。
+     - Koog 的 GitHub issue 里没有任何一条在跟踪"把托管/服务端工具通过 Responses API 暴露出来"
+       这件事。最接近的 #1492 说的是 Koog 自己实现一批可插拔 dev 工具(Shell/Grep/WebSearch 之类
+       作为普通 `ToolSet` 工具),跟 provider 托管工具是两回事——而且这正是我们已经自己做过的事
+       (`SearchToolSet`/`TavilySearchProvider`)。
+     - 结论:这不是"实现了但可能不可见"的开放问题,而是 Koog 当前任何版本都没有公开途径请求
+       OpenAI 托管 web 搜索。`SearchCapabilityKind.OPENAI_NATIVE`、`SearchCapability` 密封类型、
+       `isAvailable(currentLlmProvider)` 已整体移除(不是留着当死代码)。**保持对上游开放**:
+       如果以后 Koog 发布了公开的托管工具 API,重新加回来的成本很低——被移除的这套双层拆分
+       (`SearchCapabilityKind` 持久化标识符 / `SearchCapability` 执行期密封类型 /
+       `isAvailable` 可用性判断)本来就是为了同时容纳 external-API 和 native-search 两种形状,
+       到时候照着这次移除的 diff 反着抄一遍就行。
    - **加更多 `ExternalApi` provider**(Brave/SearXNG/Exa/Jina/Firecrawl):架构已经支持,每个只是
      新增一个实现 `SearchProvider` 接口的小类 + 在 `SearchCapabilityKind` 里加一个新枚举值 +
      Settings 下拉里多一行,不需要动 `SearchToolSet`/`TodoAgent` 的分支逻辑。
    - **Anthropic/Gemini 原生搜索**:这两家各自有自己的托管搜索机制(Claude 的
      `web_search_20250305` 工具类型、Gemini 的 Search grounding),但这个 app 现在只接了
      OpenAI/DeepSeek 两个 LLM provider,等以后真的把 Anthropic/Gemini 接成可选的聊天 provider
-     之后,再各自加一个 `SearchCapabilityKind` 枚举值 + `isAvailable` 分支,现在做不了。
+     之后才用得上。**注意**:到时候不要想当然地假设"换个 provider 就能做"——先重新确认 Koog
+     对应的 client 模块是否公开暴露了托管工具声明的 API,很可能会撞上跟 OpenAI 这次一样的
+     `internal` 可见性墙。

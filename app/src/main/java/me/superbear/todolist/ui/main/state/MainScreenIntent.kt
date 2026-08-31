@@ -32,6 +32,7 @@ sealed class MainScreenIntent {
     data class EditSubtaskTitle(val subtaskId: Long, val title: String) : MainScreenIntent()
     data class DeleteSubtask(val subtaskId: Long) : MainScreenIntent()
     data class DivideSubtasks(val taskId: Long) : MainScreenIntent()
+    object DismissSubtaskDivisionError : MainScreenIntent()
 
     // DateTime Picker
     data class OpenDateTimePicker(val initialDueDateMs: Long?) : MainScreenIntent()

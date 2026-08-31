@@ -1,19 +1,10 @@
 package me.superbear.todolist.assistant.subtask
 
 import ai.koog.agents.core.agent.AIAgent
-import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.core.tools.annotations.LLMDescription
-import ai.koog.agents.core.tools.annotations.Tool
-import ai.koog.agents.core.tools.reflect.ToolSet
-import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.params.LLMParams
 import android.util.Log
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import me.superbear.todolist.domain.entities.Priority
 
 class AISubtaskDivider(
@@ -21,37 +12,32 @@ class AISubtaskDivider(
     private val model: LLModel
 ) : SubtaskDivider {
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        explicitNulls = false
-    }
-
     private val toolSet = DivideTaskToolSet()
 
     override suspend fun divideTask(request: SubtaskDivisionRequest): Result<SubtaskDivisionResponse> {
-        val systemPrompt = "You are a task decomposition assistant. Break the given task into concrete, executable subtasks."
+        Log.d("DIAG", "[DIAG] AISubtaskDivider.divideTask ENTER: task='${request.taskTitle}' model=${model.id}")
+        val systemPrompt = """
+You are a task decomposition assistant.
+Break the given task into concrete, executable subtasks.
+You MUST call the divide_task tool exactly once with:
+- reasoning: a brief explanation of your decomposition approach
+- subtasks: a list of subtask objects, each with title (required), content (optional notes), priority (HIGH/MEDIUM/LOW/DEFAULT), and estimatedOrder (starting from 1)
+Do NOT respond with plain text. Always call the divide_task tool.
+        """.trimIndent()
         val userPrompt = buildUserPrompt(request)
 
         return try {
-            val agentConfig = AIAgentConfig(
-                prompt = prompt(
-                    id = "divide_task",
-                    params = LLMParams(toolChoice = LLMParams.ToolChoice.Required)
-                ) {
-                    system(systemPrompt)
-                },
-                model = model,
-                maxAgentIterations = 1
-            )
-
             val agent = AIAgent(
                 promptExecutor = promptExecutor,
-                agentConfig = agentConfig,
-                toolRegistry = ToolRegistry { tools(toolSet) }
+                llmModel = model,
+                toolRegistry = ToolRegistry { tools(toolSet) },
+                systemPrompt = systemPrompt,
+                maxIterations = 5
             )
 
+            Log.d("DIAG", "[DIAG] AISubtaskDivider.divideTask: running agent...")
             agent.run(userPrompt)
+            Log.d("DIAG", "[DIAG] AISubtaskDivider.divideTask: agent.run completed, lastResult=${toolSet.lastResult != null}")
             val result = toolSet.lastResult
             if (result != null) {
                 Result.success(result.copy(originalTask = request.taskTitle))
@@ -85,58 +71,4 @@ class AISubtaskDivider(
             request.context?.let { appendLine("Context: $it") }
         }.trim()
     }
-
-    @LLMDescription("Produces a task decomposition with ordered subtasks")
-    inner class DivideTaskToolSet : ToolSet {
-        var lastResult: SubtaskDivisionResponse? = null
-
-        @Tool
-        @LLMDescription("Divide a task into ordered, executable subtasks")
-        fun divide_task(
-            @LLMDescription("Brief decomposition rationale") reasoning: String,
-            @LLMDescription("JSON array of subtask objects with keys: title, content, priority, estimatedOrder, dependencies")
-            subtasks: String
-        ): String {
-            val dtoList = try {
-                json.decodeFromString<List<SubtaskDto>>(subtasks)
-            } catch (e: Exception) {
-                Log.e("AISubtaskDivider", "Failed to parse subtasks JSON: $subtasks", e)
-                return "Error: invalid subtasks format"
-            }
-            val suggestions = dtoList.mapIndexed { index, dto ->
-                SubtaskSuggestion(
-                    title = dto.title,
-                    content = dto.content,
-                    priority = parsePriority(dto.priority),
-                    estimatedOrder = dto.estimatedOrder ?: (index + 1),
-                    dependencies = dto.dependencies ?: emptyList()
-                )
-            }
-            lastResult = SubtaskDivisionResponse(
-                originalTask = "",
-                subtasks = suggestions,
-                reasoning = reasoning
-            )
-            return "ok"
-        }
-    }
-
-    private fun parsePriority(priorityStr: String?): Priority {
-        return when (priorityStr?.uppercase()) {
-            "HIGH" -> Priority.HIGH
-            "MEDIUM" -> Priority.MEDIUM
-            "LOW" -> Priority.LOW
-            else -> Priority.DEFAULT
-        }
-    }
-
-    @Serializable
-    private data class SubtaskDto(
-        val title: String,
-        val content: String? = null,
-        val priority: String? = null,
-        @SerialName("estimatedOrder")
-        val estimatedOrder: Int? = null,
-        val dependencies: List<Int>? = null
-    )
 }

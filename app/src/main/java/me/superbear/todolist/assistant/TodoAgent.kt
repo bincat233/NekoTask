@@ -33,10 +33,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import me.superbear.todolist.assistant.search.SearchCapability
 import me.superbear.todolist.assistant.search.SearchCapabilityKind
 import me.superbear.todolist.assistant.search.TavilySearchProvider
-import me.superbear.todolist.assistant.search.isAvailable
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.data.repository.LongTermMemoryRepository
 import me.superbear.todolist.domain.entities.ChatMessage
@@ -140,32 +138,13 @@ Don't save trivial or one-off details.
         val langDirective = if (language.startsWith("zh")) "Please reply in Chinese." else "Please reply in English."
         val strategy = if (streaming) streamingSingleRunStrategy() else singleRunStrategy()
 
-        // Re-checked here, not just in Settings: persisted state can go stale if the LLM provider
-        // changes elsewhere without revisiting search settings.
-        val searchAvailable = searchCapabilityKind.isAvailable(selectedProvider)
-        val searchCapability: SearchCapability? = if (!searchAvailable) {
-            null
-        } else {
-            when (searchCapabilityKind) {
-                SearchCapabilityKind.TAVILY -> SearchCapability.ExternalApi(tavilyProvider)
-                SearchCapabilityKind.OPENAI_NATIVE -> SearchCapability.OpenAiNativeSearch
-            }
+        val searchToolSet = when (searchCapabilityKind) {
+            SearchCapabilityKind.TAVILY -> SearchToolSet(tavilyProvider)
         }
-        val searchToolSet = when (searchCapability) {
-            is SearchCapability.ExternalApi -> SearchToolSet(searchCapability.provider)
-            // Stubbed: needs OpenAIResponsesParams + a declared hosted web_search tool, plus
-            // verifying whether Koog surfaces WebSearchToolCall as a visible tool-call event.
-            // See docs/AI_TASK_TOOLS.md "已知后续工作".
-            SearchCapability.OpenAiNativeSearch, null -> null
-        }
-        val searchGuidance = if (searchToolSet != null) {
-            "\nYou also have a web_search tool for looking up current information the user asks " +
-                "about (e.g. facts, news, prices) that isn't already in CURRENT_TODO_STATE or memory " +
-                "context. Use it when the user's request needs real-world/current information; " +
-                "don't reach for it while just managing tasks."
-        } else {
-            ""
-        }
+        val searchGuidance = "\nYou also have a web_search tool for looking up current information the user asks " +
+            "about (e.g. facts, news, prices) that isn't already in CURRENT_TODO_STATE or memory " +
+            "context. Use it when the user's request needs real-world/current information; " +
+            "don't reach for it while just managing tasks."
 
         return AIAgent(
             promptExecutor = buildExecutor(),
@@ -175,10 +154,11 @@ Don't save trivial or one-off details.
             toolRegistry = ToolRegistry {
                 tools(taskToolSet)
                 tools(memoryToolSet)
-                searchToolSet?.let { tools(it) }
+                tools(searchToolSet)
             },
             maxIterations = 5,
             installFeatures = {
+                install(AgentTraceFeature) {}
                 if (streaming) {
                     install(ChatStreamingFeature) {
                         this.onEvent = onEvent
@@ -217,6 +197,62 @@ Don't save trivial or one-off details.
         edge(nodeExecuteTool forwardTo nodeSendToolResult)
         edge(nodeSendToolResult forwardTo nodeFinish onTextMessage { true })
         edge(nodeSendToolResult forwardTo nodeExecuteTool onToolCalls { true })
+    }
+
+    // Structured per-node/per-tool-call trace logging, so `chat()` and `chatStreaming()` (which
+    // run different strategy graphs) both get visibility into intermediate agent output — the
+    // observability trajectory eval needs, not just the final response.
+    private object AgentTraceFeature : AIAgentGraphFeature<AgentTraceFeature.Config, Unit> {
+        class Config : FeatureConfig()
+        override val key = AIAgentStorageKey<Unit>("AgentTrace", typeToken<Unit>())
+        override fun createInitialConfig(agentConfig: AIAgentConfig) = Config()
+
+        private const val TAG = "AgentTrace"
+        private const val MAX_LEN = 500
+
+        // Framework passthrough nodes (__start__/__finish__) just echo the adjacent real node's
+        // input/output verbatim, and *ExecuteTool node dumps duplicate the tool=... CALL/RESULT
+        // lines below but with a long static toolDescription field that eats the whole truncation
+        // budget before reaching the actually-interesting output/result fields. Skip all three at
+        // the node level; the tool-call intercepts already cover them more usefully.
+        private fun isNoisyNode(name: String): Boolean =
+            name == "__start__" || name == "__finish__" || name.contains("ExecuteTool", ignoreCase = true)
+
+        private val META_INFO_RE = Regex(
+            """metaInfo=ResponseMetaInfo\(timestamp=[^,]+, totalTokensCount=\d+, """ +
+                """inputTokensCount=(\d+), outputTokensCount=(\d+), modelId=[^,]*, metadata=[^)]*\)"""
+        )
+
+        private fun Any?.summarize(): String {
+            var s = this?.toString() ?: return "null"
+            s = META_INFO_RE.replace(s, "tokens=in:$1/out:$2")
+            s = s.replace(", rawResponse=null, id=null)", ")")
+            s = s.replace(", cacheControl=null", "")
+            return if (s.length > MAX_LEN) "${s.take(MAX_LEN)}…(${s.length} chars)" else s
+        }
+
+        override fun install(config: Config, pipeline: AIAgentGraphPipeline) {
+            pipeline.interceptNodeExecutionStarting(this) { ctx ->
+                if (isNoisyNode(ctx.node.name)) return@interceptNodeExecutionStarting
+                android.util.Log.d(TAG, "node=${ctx.node.name} START input=${ctx.input.summarize()}")
+            }
+            pipeline.interceptNodeExecutionCompleted(this) { ctx ->
+                if (isNoisyNode(ctx.node.name)) return@interceptNodeExecutionCompleted
+                android.util.Log.d(TAG, "node=${ctx.node.name} DONE output=${ctx.output.summarize()}")
+            }
+            pipeline.interceptNodeExecutionFailed(this) { ctx ->
+                android.util.Log.e(TAG, "node=${ctx.node.name} FAILED: ${ctx.error.message}", ctx.error)
+            }
+            pipeline.interceptToolCallStarting(this) { ctx ->
+                android.util.Log.d(TAG, "tool=${ctx.toolName} CALL args=${ctx.toolArgs.summarize()}")
+            }
+            pipeline.interceptToolCallCompleted(this) { ctx ->
+                android.util.Log.d(TAG, "tool=${ctx.toolName} RESULT=${ctx.toolResult.summarize()}")
+            }
+            pipeline.interceptToolCallFailed(this) { ctx ->
+                android.util.Log.e(TAG, "tool=${ctx.toolName} FAILED: ${ctx.message}", ctx.error)
+            }
+        }
     }
 
     private object ChatStreamingFeature : AIAgentGraphFeature<ChatStreamingFeature.Config, Unit> {

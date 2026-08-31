@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         applicationId = "me.superbear.todolist"
-        minSdk = 35
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -79,7 +79,7 @@ android {
 }
 
 dependencies {
-    implementation("ai.koog:agents-core-android:1.0.0")
+    implementation("ai.koog:agents-core-android:1.0.0-SNAPSHOT")
     val room_version = "2.7.2"
     implementation("androidx.room:room-runtime:${room_version}")
     implementation("androidx.room:room-ktx:${room_version}")

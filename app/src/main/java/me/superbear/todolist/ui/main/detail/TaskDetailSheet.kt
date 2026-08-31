@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.datetime.Instant
 import androidx.compose.ui.res.stringResource
 import me.superbear.todolist.R
@@ -97,10 +98,20 @@ fun TaskDetailSheet(
     onDivideSubtasks: (Long) -> Unit,
     onDeleteTask: (Task) -> Unit,
     isSubtaskDivisionLoading: Boolean = false,
+    subtaskDivisionError: String? = null,
+    onDismissSubtaskDivisionError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val coroutineScope = rememberCoroutineScope()
+
+    // Auto-dismiss error after 5 seconds
+    LaunchedEffect(subtaskDivisionError) {
+        if (subtaskDivisionError != null) {
+            delay(5_000)
+            onDismissSubtaskDivisionError()
+        }
+    }
 
     BackHandler(enabled = visible) {
         coroutineScope.launch {
@@ -186,6 +197,8 @@ fun TaskDetailSheet(
                     onDivideSubtasks = onDivideSubtasks,
                     onDeleteTask = onDeleteTask,
                     isSubtaskDivisionLoading = isSubtaskDivisionLoading,
+                    subtaskDivisionError = subtaskDivisionError,
+                    onDismissError = onDismissSubtaskDivisionError,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
@@ -488,27 +501,30 @@ fun TaskDetailToolbar(
     onDivideSubtasks: (Long) -> Unit,
     onDeleteTask: (Task) -> Unit,
     isSubtaskDivisionLoading: Boolean = false,
+    subtaskDivisionError: String? = null,
+    onDismissError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
 
-    // Row：水平排列所有按钮
-    //   [AI拆分] [添加子任务] [提醒] ── Spacer(weight=1,撑开) ── [优先级文字] [删除]
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         // Box：用来叠加内容（图标 或 加载圈），并设置背景色和圆角
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .background(
-                    color = if (isSubtaskDivisionLoading)
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                    else
-                        MaterialTheme.colorScheme.primary,
+                    color = when {
+                        subtaskDivisionError != null -> MaterialTheme.colorScheme.error
+                        isSubtaskDivisionLoading -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        else -> MaterialTheme.colorScheme.primary
+                    },
                     shape = RoundedCornerShape(8.dp)
                 )
                 .clickable(enabled = !isSubtaskDivisionLoading) {
+                    onDismissError()
                     task.id?.let { taskId ->
                         onDivideSubtasks(taskId)
                     }
@@ -601,6 +617,17 @@ fun TaskDetailToolbar(
                 imageVector = Icons.Default.Delete,
                 contentDescription = stringResource(R.string.delete),
                 tint = Color.White
+            )
+        }
+        }
+
+        if (subtaskDivisionError != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = subtaskDivisionError,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

@@ -2,6 +2,7 @@ package me.superbear.todolist.ui.main
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -184,6 +185,7 @@ class MainViewModel(
             is MainScreenIntent.DeleteSubtask -> taskListCoordinator.handleEvent(TaskEvent.DeleteSubtask(event.subtaskId))
             is MainScreenIntent.DivideSubtasks -> {
                 val settings = settingsCoordinator.settingsState.value
+                Log.d("DIAG", "[DIAG] DivideSubtasks: taskId=${event.taskId} useAI=${settings.useAI} strategy=${settings.aiDivisionStrategy} max=${settings.maxSubtasks}")
                 subtaskDivisionCoordinator.handleEvent(
                     SubtaskDivisionEvent.CreateFromSuggestions(
                         taskId = event.taskId,
@@ -192,6 +194,9 @@ class MainViewModel(
                         useAI = settings.useAI
                     )
                 )
+            }
+            is MainScreenIntent.DismissSubtaskDivisionError -> {
+                subtaskDivisionCoordinator.clearError()
             }
 
             // DateTime Picker

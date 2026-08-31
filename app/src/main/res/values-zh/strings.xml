@@ -67,7 +67,6 @@
     <string name="settings_search_title">网页搜索</string>
     <string name="settings_search_select">搜索提供方</string>
     <string name="settings_search_capability_tavily">Tavily</string>
-    <string name="settings_search_capability_openai_native">OpenAI 原生搜索</string>
     <string name="settings_search_api_key_label">Tavily API 密钥</string>
     <string name="settings_search_api_key_hint">密钥仅存储在本机，不会上传到任何服务器</string>
     <string name="settings_ai_division_title">AI子任务划分</string>

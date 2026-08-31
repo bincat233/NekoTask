@@ -57,6 +57,10 @@ class SubtaskDivisionCoordinator(
         }
     }
 
+    fun clearError() {
+        _state.update { it.copy(errorMessage = null) }
+    }
+
     private fun generateSubtaskSuggestions(
         taskId: Long, strategy: DivisionStrategy?, maxSubtasks: Int?,
         context: String?, useAI: Boolean
@@ -91,33 +95,45 @@ class SubtaskDivisionCoordinator(
         taskId: Long, strategy: DivisionStrategy?, maxSubtasks: Int?,
         context: String?, useAI: Boolean
     ) {
+        Log.d("DIAG", "[DIAG] createSubtasksFromAI ENTER: taskId=$taskId useAI=$useAI")
         val task = taskListCoordinator.findTask(taskId)
         if (task == null) {
             Log.e("SubtaskDivisionCoordinator", "Task not found for subtask creation: $taskId")
+            Log.e("DIAG", "[DIAG] createSubtasksFromAI: findTask returned null for taskId=$taskId")
+            _state.update { it.copy(errorMessage = "Task not found") }
             return
         }
+        Log.d("DIAG", "[DIAG] createSubtasksFromAI: task found, title='${task.title}' id=${task.id}")
 
         viewModelScope.launch {
             try {
-                _state.update { it.copy(isSubtaskDivisionLoading = true) }
+                _state.update { it.copy(isSubtaskDivisionLoading = true, errorMessage = null) }
+                Log.d("DIAG", "[DIAG] createSubtasksFromAI: launching divideAndCreateSubtasks...")
                 val result = getSubtaskDivisionService().divideAndCreateSubtasks(
                     parentTask = task, strategy = strategy, maxSubtasks = maxSubtasks,
                     context = context, useAI = useAI, forceCreate = true
                 )
+                Log.d("DIAG", "[DIAG] createSubtasksFromAI: divideAndCreateSubtasks returned isSuccess=${result.isSuccess}")
                 result.fold(
                     onSuccess = { divisionResult ->
                         Log.d(
                             "SubtaskDivisionCoordinator",
                             "Successfully created ${divisionResult.createdTasks.size} subtasks"
                         )
+                        Log.d("DIAG", "[DIAG] createSubtasksFromAI SUCCESS: created=${divisionResult.createdTasks.size} subtasks")
                     },
                     onFailure = { error ->
                         Log.e("SubtaskDivisionCoordinator", "Failed to create subtasks", error)
+                        Log.e("DIAG", "[DIAG] createSubtasksFromAI FAILED: ${error.javaClass.simpleName}: ${error.message}")
+                        _state.update { it.copy(errorMessage = "AI subtask division failed: ${error.message ?: "Unknown error"}") }
                     }
                 )
             } catch (e: Exception) {
                 Log.e("SubtaskDivisionCoordinator", "Unexpected error in subtask creation", e)
+                Log.e("DIAG", "[DIAG] createSubtasksFromAI EXCEPTION: ${e.javaClass.simpleName}: ${e.message}", e)
+                _state.update { it.copy(errorMessage = "Unexpected error: ${e.message ?: "Unknown"}") }
             } finally {
+                Log.d("DIAG", "[DIAG] createSubtasksFromAI: finally, resetting loading")
                 _state.update { it.copy(isSubtaskDivisionLoading = false) }
             }
         }
