@@ -11,6 +11,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import me.superbear.todolist.assistant.FakeChatAgent
 import me.superbear.todolist.assistant.FakeLlmRuntime
+import me.superbear.todolist.assistant.FakeSearchRuntime
 import me.superbear.todolist.data.TodoRepository
 import me.superbear.todolist.data.repository.LongTermMemoryRepository
 import me.superbear.todolist.ui.main.MainScreen
@@ -50,7 +51,8 @@ class ChatWithFakeAgentTest {
             todoRepository,
             longTermMemoryRepository,
             fakeAgent,
-            FakeLlmRuntime()
+            FakeLlmRuntime(),
+            FakeSearchRuntime()
         )
 
         composeTestRule.setContent {

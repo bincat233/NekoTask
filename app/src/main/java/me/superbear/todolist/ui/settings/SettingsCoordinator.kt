@@ -1,6 +1,5 @@
 package me.superbear.todolist.ui.settings
 
-import ai.koog.prompt.llm.LLMProvider
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -9,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import me.superbear.todolist.BuildConfig
+import me.superbear.todolist.assistant.AssistantProvider
 import me.superbear.todolist.assistant.LlmRuntime
 import me.superbear.todolist.assistant.SearchRuntime
 import me.superbear.todolist.assistant.search.SearchCapabilityKind
@@ -30,7 +30,7 @@ class SettingsCoordinator(
     private val searchRuntime: SearchRuntime
 ) {
     val PROVIDER_INFO = mapOf(
-        LLMProvider.OpenAI to ProviderInfo("OpenAI", "gpt-5-mini", listOf(
+        AssistantProvider.OPENAI to ProviderInfo("OpenAI", "gpt-5-mini", listOf(
             "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
             "gpt-5.2", "gpt-5.1",
             "gpt-5", "gpt-5-mini", "gpt-5-nano",
@@ -38,16 +38,20 @@ class SettingsCoordinator(
             "gpt-4o", "gpt-4o-mini",
             "o3-mini", "o4-mini"
         )),
-        LLMProvider.DeepSeek to ProviderInfo("DeepSeek", "deepseek-v4-flash", listOf(
+        AssistantProvider.DEEPSEEK to ProviderInfo("DeepSeek", "deepseek-v4-flash", listOf(
             "deepseek-v4-flash", "deepseek-v4-pro"
-        ))
+        )),
+        AssistantProvider.CUSTOM to ProviderInfo("Custom", "gpt-4o-mini", emptyList())
     )
 
-    private val _selectedProvider = MutableStateFlow<LLMProvider>(LLMProvider.OpenAI)
-    val selectedProvider: StateFlow<LLMProvider> = _selectedProvider.asStateFlow()
+    private val _selectedProvider = MutableStateFlow(AssistantProvider.OPENAI)
+    val selectedProvider: StateFlow<AssistantProvider> = _selectedProvider.asStateFlow()
 
     private val _currentApiKey = MutableStateFlow("")
     val currentApiKey: StateFlow<String> = _currentApiKey.asStateFlow()
+
+    private val _customBaseUrl = MutableStateFlow("")
+    val customBaseUrl: StateFlow<String> = _customBaseUrl.asStateFlow()
 
     private val _selectedModel = MutableStateFlow("")
     val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
@@ -93,29 +97,27 @@ class SettingsCoordinator(
         // has no BuildConfig fallback, so explicitly clearing a key in Settings actually sticks
         // instead of reappearing on the next launch.
         if (BuildConfig.DEBUG && !prefs.getBoolean(DEBUG_KEYS_SEEDED_KEY, false)) {
-            seedDebugKeyIfBlank(LLMProvider.OpenAI, BuildConfig.OPENAI_API_KEY)
-            seedDebugKeyIfBlank(LLMProvider.DeepSeek, BuildConfig.DEEPSEEK_API_KEY)
+            seedDebugKeyIfBlank(AssistantProvider.OPENAI, BuildConfig.OPENAI_API_KEY)
+            seedDebugKeyIfBlank(AssistantProvider.DEEPSEEK, BuildConfig.DEEPSEEK_API_KEY)
             seedDebugKeyIfBlank(SEARCH_API_KEY_PREF, BuildConfig.TAVILY_API_KEY)
             prefs.edit().putBoolean(DEBUG_KEYS_SEEDED_KEY, true).apply()
         }
 
-        val initialProviderStr = prefs.getString("selected_provider", null)
-        val initialProvider = when (initialProviderStr) {
-            "openai" -> LLMProvider.OpenAI
-            "deepseek" -> LLMProvider.DeepSeek
-            else -> LLMProvider.OpenAI
-        }
-        val initialInfo = PROVIDER_INFO[initialProvider] ?: PROVIDER_INFO[LLMProvider.OpenAI]!!
+        val initialProvider = AssistantProvider.fromId(prefs.getString("selected_provider", null))
+        val initialInfo = PROVIDER_INFO[initialProvider] ?: PROVIDER_INFO[AssistantProvider.OPENAI]!!
 
         val initialKey = loadApiKey(initialProvider)
         val initialModel = loadModel(initialProvider, initialInfo)
+        val initialCustomBaseUrl = prefs.getString(CUSTOM_BASE_URL_PREF, null) ?: ""
 
+        llmRuntime.setCustomBaseUrl(initialCustomBaseUrl)
         llmRuntime.setApiKey(initialProvider, initialKey)
         llmRuntime.selectProvider(initialProvider)
         llmRuntime.selectModelByName(initialModel)
 
         _selectedProvider.value = initialProvider
         _currentApiKey.value = initialKey
+        _customBaseUrl.value = initialCustomBaseUrl
         _selectedModel.value = initialModel
 
         refreshModels()
@@ -128,12 +130,12 @@ class SettingsCoordinator(
         _currentSearchApiKey.value = initialSearchKey
     }
 
-    private fun loadApiKey(provider: LLMProvider): String {
-        return prefs.getString("${provider.id.lowercase()}_api_key", null) ?: ""
+    private fun loadApiKey(provider: AssistantProvider): String {
+        return prefs.getString("${provider.id}_api_key", null) ?: ""
     }
 
-    private fun seedDebugKeyIfBlank(provider: LLMProvider, debugKey: String) {
-        seedDebugKeyIfBlank(prefKey = "${provider.id.lowercase()}_api_key", debugKey = debugKey)
+    private fun seedDebugKeyIfBlank(provider: AssistantProvider, debugKey: String) {
+        seedDebugKeyIfBlank(prefKey = "${provider.id}_api_key", debugKey = debugKey)
     }
 
     private fun seedDebugKeyIfBlank(prefKey: String, debugKey: String) {
@@ -153,12 +155,12 @@ class SettingsCoordinator(
             ?: SearchCapabilityKind.TAVILY
     }
 
-    private fun loadModel(provider: LLMProvider, info: ProviderInfo = PROVIDER_INFO[provider]!!): String {
-        val model = prefs.getString("${provider.id.lowercase()}_selected_model", null)
+    private fun loadModel(provider: AssistantProvider, info: ProviderInfo = PROVIDER_INFO[provider]!!): String {
+        val model = prefs.getString("${provider.id}_selected_model", null)
         return model?.takeIf { it.isNotBlank() } ?: info.defaultModel
     }
 
-    fun selectProvider(provider: LLMProvider) {
+    fun selectProvider(provider: AssistantProvider) {
         val info = PROVIDER_INFO[provider] ?: return
         prefs.edit().putString("selected_provider", provider.id).apply()
 
@@ -174,20 +176,27 @@ class SettingsCoordinator(
         refreshModels()
     }
 
-    fun setApiKey(provider: LLMProvider, key: String) {
+    fun setApiKey(provider: AssistantProvider, key: String) {
         val trimmed = key.trim()
-        prefs.edit().putString("${provider.id.lowercase()}_api_key", trimmed).apply()
+        prefs.edit().putString("${provider.id}_api_key", trimmed).apply()
         if (_selectedProvider.value == provider) {
             llmRuntime.setApiKey(provider, trimmed)
             _currentApiKey.value = trimmed
         }
     }
 
+    fun setCustomBaseUrl(baseUrl: String) {
+        val normalized = baseUrl.trim().trimEnd('/')
+        prefs.edit().putString(CUSTOM_BASE_URL_PREF, normalized).apply()
+        llmRuntime.setCustomBaseUrl(normalized)
+        _customBaseUrl.value = normalized
+    }
+
     fun selectModel(model: String) {
         val provider = _selectedProvider.value
-        prefs.edit().putString("${provider.id.lowercase()}_selected_model", model).apply()
-        llmRuntime.selectModelByName(model)
-        _selectedModel.value = model
+        prefs.edit().putString("${provider.id}_selected_model", model.trim()).apply()
+        llmRuntime.selectModelByName(model.trim())
+        _selectedModel.value = model.trim()
     }
 
     fun refreshModels() {
@@ -233,5 +242,6 @@ class SettingsCoordinator(
         private const val DEBUG_KEYS_SEEDED_KEY = "debug_keys_seeded_v1"
         private const val SEARCH_API_KEY_PREF = "tavily_api_key"
         private const val SEARCH_CAPABILITY_PREF = "search_capability_kind"
+        private const val CUSTOM_BASE_URL_PREF = "custom_base_url"
     }
 }

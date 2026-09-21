@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import ai.koog.prompt.llm.LLMProvider
 import me.superbear.todolist.BuildConfig
+import me.superbear.todolist.assistant.AssistantProvider
 import me.superbear.todolist.assistant.ChatAgent
 import me.superbear.todolist.assistant.LlmRuntime
 import me.superbear.todolist.assistant.SearchRuntime
@@ -89,14 +89,16 @@ class MainViewModel(
     )
 
     // Thin delegating wrappers so MainScreen.kt's direct-call surface doesn't need to change.
-    val selectedProvider: StateFlow<LLMProvider> get() = settingsCoordinator.selectedProvider
+    val selectedProvider: StateFlow<AssistantProvider> get() = settingsCoordinator.selectedProvider
     val currentApiKey: StateFlow<String> get() = settingsCoordinator.currentApiKey
+    val customBaseUrl: StateFlow<String> get() = settingsCoordinator.customBaseUrl
     val selectedModel: StateFlow<String> get() = settingsCoordinator.selectedModel
     val availableModels: StateFlow<List<String>> get() = settingsCoordinator.availableModels
     val isLoadingModels: StateFlow<Boolean> get() = settingsCoordinator.isLoadingModels
     val PROVIDER_INFO get() = settingsCoordinator.PROVIDER_INFO
-    fun selectProvider(provider: LLMProvider) = settingsCoordinator.selectProvider(provider)
-    fun setApiKey(provider: LLMProvider, key: String) = settingsCoordinator.setApiKey(provider, key)
+    fun selectProvider(provider: AssistantProvider) = settingsCoordinator.selectProvider(provider)
+    fun setApiKey(provider: AssistantProvider, key: String) = settingsCoordinator.setApiKey(provider, key)
+    fun setCustomBaseUrl(baseUrl: String) = settingsCoordinator.setCustomBaseUrl(baseUrl)
     fun selectModel(model: String) = settingsCoordinator.selectModel(model)
     fun refreshModels() = settingsCoordinator.refreshModels()
     fun updateSettings(settings: SettingsState) = settingsCoordinator.updateSettings(settings)

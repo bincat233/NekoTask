@@ -62,6 +62,7 @@ fun MainScreen(
     // 从 ViewModel 订阅 UI 状态（StateFlow -> Compose 状态）
     val state by viewModel.appState.collectAsState()
     val currentApiKey by viewModel.currentApiKey.collectAsState()
+    val customBaseUrl by viewModel.customBaseUrl.collectAsState()
     val selectedProvider by viewModel.selectedProvider.collectAsState()
     val settingsState by viewModel.settingsState.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
@@ -304,6 +305,8 @@ fun MainScreen(
                         onProviderSelect = viewModel::selectProvider,
                         apiKey = currentApiKey,
                         onApiKeySave = viewModel::setApiKey,
+                        customBaseUrl = customBaseUrl,
+                        onCustomBaseUrlSave = viewModel::setCustomBaseUrl,
                         selectedModel = selectedModel,
                         availableModels = availableModels,
                         isLoadingModels = isLoadingModels,

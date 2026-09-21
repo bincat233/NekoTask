@@ -51,6 +51,11 @@ OPENAI_API_KEY=...
 - When deleting a parent task, prefer the recursive deletion path to avoid orphaned subtasks.
 - Keep task tree status rules in `TodoRepository`, not individual UI coordinators, so AI tools and manual UI interactions stay consistent.
 - Changes involving Settings provider/model/key should also check `TodoAgent`, `LlmRuntime`, and `SubtaskDivisionCoordinator`, because subtask division reuses the current AI runtime.
+- Settings uses the app-owned `AssistantProvider`, not Koog's `LLMProvider`, so the UI can represent
+  the `CUSTOM` OpenAI-compatible provider. At execution time, `TodoAgent` maps `CUSTOM` to
+  `LLMProvider.OpenAI` with the saved base URL and a Chat Completions-only capability set. Keep the
+  executor scoped to the selected provider so the custom and first-party OpenAI clients do not
+  compete for the same Koog provider key.
 - Do not turn debug sample reset into "wipe on every install"; data should be cleared only by explicit developer action, app data clearing, or uninstall.
 - Do not use README's historical roadmap to decide whether a feature exists. Confirm with `rg` and code.
 

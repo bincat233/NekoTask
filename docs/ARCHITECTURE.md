@@ -37,7 +37,11 @@ This document outlines the core architecture, data flows, and AI integration lay
 
 - AI framework: JetBrains Koog (`ai.koog:agents-core-android`).
 - Production implementation: `TodoAgent` implements both `ChatAgent` and `LlmRuntime`.
-- Providers: OpenAI and DeepSeek, selected through Settings by provider/model/key.
+- Providers: OpenAI, DeepSeek, and a user-defined OpenAI-compatible endpoint, selected through
+  Settings by provider/model/key. Custom endpoints also persist a user-entered base URL.
+- `AssistantProvider` is the app-level provider identity used by Settings and persistence. Custom
+  endpoints map to Koog's `LLMProvider.OpenAI` internally, use `OpenAILLMClient` with the saved base
+  URL, and declare classic Chat Completions capabilities so arbitrary model IDs keep tool calling.
 - Executor: `TodoAgent.buildExecutor()` returns `MultiLLMPromptExecutor`; OpenAI-compatible clients use `KtorKoogHttpClient` to adapt Ktor into Koog.
 - Tools: `TaskToolSet` exposes task create/update/delete/complete tools; `MemoryToolSet` exposes long-term memory add/update/delete/list tools.
 - Checklist/planning requests with multiple actionable items should use `TaskToolSet.add_task_with_subtasks` for a new parent task, or `TaskToolSet.add_subtasks` for an existing parent. Do not encode multi-item checklists as numbered text in task `content`.
