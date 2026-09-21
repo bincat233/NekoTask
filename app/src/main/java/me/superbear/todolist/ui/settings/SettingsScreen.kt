@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import me.superbear.todolist.BuildConfig
 import me.superbear.todolist.R
-import ai.koog.prompt.llm.LLMProvider
+import me.superbear.todolist.assistant.AssistantProvider
 import me.superbear.todolist.assistant.search.SearchCapabilityKind
 import me.superbear.todolist.assistant.subtask.DivisionStrategy
 import me.superbear.todolist.domain.entities.LongTermMemory
@@ -43,10 +43,12 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     settingsState: SettingsState = SettingsState(),
     onSettingsChange: (SettingsState) -> Unit = {},
-    selectedProvider: LLMProvider = LLMProvider.OpenAI,
-    onProviderSelect: (LLMProvider) -> Unit = {},
+    selectedProvider: AssistantProvider = AssistantProvider.OPENAI,
+    onProviderSelect: (AssistantProvider) -> Unit = {},
     apiKey: String = "",
-    onApiKeySave: (LLMProvider, String) -> Unit = { _, _ -> },
+    onApiKeySave: (AssistantProvider, String) -> Unit = { _, _ -> },
+    customBaseUrl: String = "",
+    onCustomBaseUrlSave: (String) -> Unit = {},
     selectedModel: String = "",
     availableModels: List<String> = emptyList(),
     isLoadingModels: Boolean = false,
@@ -57,7 +59,7 @@ fun SettingsScreen(
     onDeleteMemory: (LongTermMemory) -> Unit = {},
     onToggleMemoryActive: (LongTermMemory, Boolean) -> Unit = { _, _ -> },
     onLanguageChange: (String) -> Unit = {},
-    providerInfo: Map<LLMProvider, ProviderDisplayInfo> = emptyMap(),
+    providerInfo: Map<AssistantProvider, ProviderDisplayInfo> = emptyMap(),
     onResetSampleData: () -> Unit = {},
     selectedSearchCapability: SearchCapabilityKind = SearchCapabilityKind.TAVILY,
     onSearchCapabilitySelect: (SearchCapabilityKind) -> Unit = {},
@@ -108,6 +110,13 @@ fun SettingsScreen(
                 providerInfo = providerInfo
             )
 
+            if (selectedProvider == AssistantProvider.CUSTOM) {
+                CustomBaseUrlSection(
+                    baseUrl = customBaseUrl,
+                    onSave = onCustomBaseUrlSave
+                )
+            }
+
             // 语言设置
             LanguageSection(
                 currentLanguage = currentSettings.currentLanguage,
@@ -130,7 +139,9 @@ fun SettingsScreen(
                 isLoading = isLoadingModels,
                 onModelSelect = onModelSelect,
                 onRefresh = onRefreshModels,
-                fallbackModels = fallback
+                fallbackModels = fallback,
+                isCustom = selectedProvider == AssistantProvider.CUSTOM,
+                providerDisplayName = providerInfo[selectedProvider]?.displayName ?: selectedProvider.name
             )
 
             // 网页搜索设置
@@ -251,9 +262,9 @@ private fun LanguageSection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProviderSection(
-    selectedProvider: LLMProvider,
-    onProviderSelect: (LLMProvider) -> Unit,
-    providerInfo: Map<LLMProvider, ProviderDisplayInfo>
+    selectedProvider: AssistantProvider,
+    onProviderSelect: (AssistantProvider) -> Unit,
+    providerInfo: Map<AssistantProvider, ProviderDisplayInfo>
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -301,7 +312,9 @@ private fun ModelSection(
     isLoading: Boolean,
     onModelSelect: (String) -> Unit,
     onRefresh: () -> Unit,
-    fallbackModels: List<String>
+    fallbackModels: List<String>,
+    isCustom: Boolean,
+    providerDisplayName: String
 ) {
     var expanded by remember { mutableStateOf(false) }
     val displayModels = availableModels.ifEmpty { fallbackModels }
@@ -322,9 +335,9 @@ private fun ModelSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(stringResource(R.string.settings_model_title), style = MaterialTheme.typography.titleMedium)
-                if (isLoading) {
+                if (!isCustom && isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
+                } else if (!isCustom) {
                     IconButton(
                         onClick = onRefresh,
                         modifier = Modifier.size(32.dp)
@@ -338,45 +351,60 @@ private fun ModelSection(
                 }
             }
 
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = it }
-            ) {
+            if (isCustom) {
                 OutlinedTextField(
                     value = selectedModel,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                    label = { Text(stringResource(R.string.settings_model_select)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+                    onValueChange = onModelSelect,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.settings_custom_model_label)) },
+                    singleLine = true
                 )
-                ExposedDropdownMenu(
+                Text(
+                    text = stringResource(R.string.settings_custom_model_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                    onExpandedChange = { expanded = it }
                 ) {
-                    displayModels.forEach { model ->
-                        DropdownMenuItem(
-                            text = { Text(model) },
-                            onClick = {
-                                onModelSelect(model)
-                                expanded = false
-                            },
-                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                        )
+                    OutlinedTextField(
+                        value = selectedModel,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                        label = { Text(stringResource(R.string.settings_model_select)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        displayModels.forEach { model ->
+                            DropdownMenuItem(
+                                text = { Text(model) },
+                                onClick = {
+                                    onModelSelect(model)
+                                    expanded = false
+                                },
+                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                            )
+                        }
                     }
                 }
-            }
 
-            Text(
-                text = if (availableModels.isNotEmpty())
-                    stringResource(R.string.settings_model_count_msg, availableModels.size, "OpenAI")
-                else
-                    stringResource(R.string.settings_model_fallback_msg, "OpenAI"),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                Text(
+                    text = if (availableModels.isNotEmpty())
+                        stringResource(R.string.settings_model_count_msg, availableModels.size, providerDisplayName)
+                    else
+                        stringResource(R.string.settings_model_fallback_msg, providerDisplayName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -486,13 +514,60 @@ private fun SearchProviderSection(
 }
 
 @Composable
-private fun ApiKeySection(
-    provider: LLMProvider,
-    apiKey: String,
-    onApiKeySave: (LLMProvider, String) -> Unit,
-    providerInfo: Map<LLMProvider, ProviderDisplayInfo>
+private fun CustomBaseUrlSection(
+    baseUrl: String,
+    onSave: (String) -> Unit
 ) {
-    val displayName = providerInfo[provider]?.displayName ?: provider.display
+    var draft by remember(baseUrl) { mutableStateOf(baseUrl) }
+    val normalizedDraft = draft.trim().trimEnd('/')
+    val changed = normalizedDraft != baseUrl && normalizedDraft.isNotBlank()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.settings_custom_base_url_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.settings_custom_base_url_label)) },
+                placeholder = { Text("https://example.com/v1") },
+                singleLine = true
+            )
+            Text(
+                text = stringResource(R.string.settings_custom_base_url_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = { onSave(normalizedDraft) },
+                enabled = changed,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApiKeySection(
+    provider: AssistantProvider,
+    apiKey: String,
+    onApiKeySave: (AssistantProvider, String) -> Unit,
+    providerInfo: Map<AssistantProvider, ProviderDisplayInfo>
+) {
+    val displayName = providerInfo[provider]?.displayName ?: provider.name
     var draft by remember(apiKey) { mutableStateOf(apiKey) }
     var visible by remember { mutableStateOf(false) }
     val changed = draft.trim() != apiKey.trim() && draft.isNotBlank()

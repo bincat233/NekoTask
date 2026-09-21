@@ -6,6 +6,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.llm.LLMProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import me.superbear.todolist.assistant.search.SearchCapabilityKind
 import me.superbear.todolist.domain.entities.ChatMessage
 
 /**
@@ -52,13 +53,21 @@ class FakeChatAgent(
 }
 
 class FakeLlmRuntime : LlmRuntime {
-    override fun setApiKey(provider: LLMProvider, key: String) {}
+    override fun setApiKey(provider: AssistantProvider, key: String) {}
 
-    override fun selectProvider(provider: LLMProvider) {}
+    override fun setCustomBaseUrl(baseUrl: String) {}
+
+    override fun selectProvider(provider: AssistantProvider) {}
 
     override fun selectModelByName(name: String) {}
 
     override fun buildExecutor(): PromptExecutor = MultiLLMPromptExecutor()
 
     override fun getCurrentModel(): LLModel = LLModel(provider = LLMProvider.OpenAI, id = "fake-model")
+}
+
+class FakeSearchRuntime : SearchRuntime {
+    override fun setSearchCapability(kind: SearchCapabilityKind) {}
+
+    override fun setSearchApiKey(key: String) {}
 }

@@ -25,6 +25,7 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.prompt.streaming.toMessageResponse
 import ai.koog.serialization.typeToken
+import android.util.Log
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -46,6 +47,7 @@ class TodoAgent(
 ) : ChatAgent, LlmRuntime, SearchRuntime {
 
     companion object {
+        private const val TAG = "TodoAgent"
         // Koog ships no built-in model catalog for DeepSeek (it's routed through OpenAILLMClient
         // via a custom baseUrl), so capabilities must be declared by hand — otherwise
         // OpenAILLMClient.determineParams can't tell which param shape to use and throws.
@@ -54,7 +56,7 @@ class TodoAgent(
         // `n` param for multiple choices, no vision/document input), tools/tool_choice supported,
         // response_format supports basic {"type":"json_object"} only (no json_schema/strict mode
         // for general responses — only for tool-call arguments, which Koog has no capability for).
-        private val DEEPSEEK_CAPABILITIES = listOf(
+        private val CHAT_COMPLETIONS_CAPABILITIES = listOf(
             LLMCapability.Temperature,
             LLMCapability.Tools,
             LLMCapability.ToolChoice,
@@ -62,13 +64,33 @@ class TodoAgent(
             LLMCapability.Schema.JSON.Basic,
             LLMCapability.OpenAIEndpoint.Completions
         )
-        val DeepSeekV4Flash = LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-flash", capabilities = DEEPSEEK_CAPABILITIES)
-        val DeepSeekV4Pro = LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-pro", capabilities = DEEPSEEK_CAPABILITIES)
+        val DeepSeekV4Flash = LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-flash", capabilities = CHAT_COMPLETIONS_CAPABILITIES)
+        val DeepSeekV4Pro = LLModel(provider = LLMProvider.DeepSeek, id = "deepseek-v4-pro", capabilities = CHAT_COMPLETIONS_CAPABILITIES)
+
+        fun customOpenAIModel(id: String): LLModel = LLModel(
+            provider = LLMProvider.OpenAI,
+            id = id,
+            capabilities = CHAT_COMPLETIONS_CAPABILITIES
+        )
+
+        fun customOpenAISettings(baseUrl: String): OpenAIClientSettings {
+            val trimmed = baseUrl.trim().trimEnd('/')
+            // Ktor resolves "chat/completions" against a base ending in /v1 as a sibling path,
+            // producing /chat/completions. Normalize the optional suffix away and always append
+            // Koog's full v1 path so both https://host and https://host/v1 resolve identically.
+            val normalized = trimmed.removeSuffix("/v1").removeSuffix("/V1")
+            return OpenAIClientSettings(
+                baseUrl = normalized,
+                chatCompletionsPath = "v1/chat/completions"
+            )
+        }
     }
 
     private var openAIKey: String = ""
     private var deepSeekKey: String = ""
-    private var selectedProvider: LLMProvider = LLMProvider.OpenAI
+    private var customKey: String = ""
+    private var customBaseUrl: String = ""
+    private var selectedProvider: AssistantProvider = AssistantProvider.OPENAI
     private var selectedModel: LLModel = OpenAIModels.Chat.GPT4o
 
     private val taskToolSet = TaskToolSet(repository)
@@ -108,17 +130,17 @@ Don't save trivial or one-off details.
 """.trimIndent()
 
     override fun buildExecutor(): PromptExecutor {
-        val pairs = buildList {
-            if (openAIKey.isNotBlank()) {
-                add(
+        val pairs = when (selectedProvider) {
+            AssistantProvider.OPENAI -> buildList {
+                if (openAIKey.isNotBlank()) add(
                     LLMProvider.OpenAI to OpenAILLMClient(
                         apiKey = openAIKey,
                         httpClientFactory = KtorKoogHttpClient.Factory(HttpClient())
                     )
                 )
             }
-            if (deepSeekKey.isNotBlank()) {
-                add(
+            AssistantProvider.DEEPSEEK -> buildList {
+                if (deepSeekKey.isNotBlank()) add(
                     LLMProvider.DeepSeek to OpenAILLMClient(
                         apiKey = deepSeekKey,
                         settings = OpenAIClientSettings(baseUrl = "https://api.deepseek.com"),
@@ -126,7 +148,31 @@ Don't save trivial or one-off details.
                     )
                 )
             }
+            AssistantProvider.CUSTOM -> buildList {
+                if (customBaseUrl.isNotBlank()) add(
+                    LLMProvider.OpenAI to OpenAILLMClient(
+                        apiKey = customKey,
+                        settings = customOpenAISettings(customBaseUrl),
+                        httpClientFactory = KtorKoogHttpClient.Factory(HttpClient())
+                    )
+                )
+            }
         }
+        val endpoint = if (selectedProvider == AssistantProvider.CUSTOM) {
+            customOpenAISettings(customBaseUrl).let { "${it.baseUrl}/${it.chatCompletionsPath}" }
+        } else {
+            "provider-default"
+        }
+        val keyConfigured = when (selectedProvider) {
+            AssistantProvider.OPENAI -> openAIKey.isNotBlank()
+            AssistantProvider.DEEPSEEK -> deepSeekKey.isNotBlank()
+            AssistantProvider.CUSTOM -> customKey.isNotBlank()
+        }
+        Log.d(
+            TAG,
+            "buildExecutor provider=$selectedProvider model=${selectedModel.id} endpoint=$endpoint " +
+                "apiKeyConfigured=$keyConfigured clients=${pairs.size}"
+        )
         return MultiLLMPromptExecutor(*pairs.toTypedArray())
     }
 
@@ -294,6 +340,12 @@ Don't save trivial or one-off details.
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "chatStreaming failed provider=$selectedProvider model=${selectedModel.id} " +
+                        "causeChain=${e.causeChain()}",
+                    e
+                )
                 trySend(ChatStreamEvent.Error(e))
                 close()
             }
@@ -330,20 +382,24 @@ Don't save trivial or one-off details.
         appendLine("USER REQUEST: $userMessage")
     }
 
-    override fun setApiKey(provider: LLMProvider, key: String) {
+    override fun setApiKey(provider: AssistantProvider, key: String) {
         when (provider) {
-            LLMProvider.OpenAI -> openAIKey = key
-            LLMProvider.DeepSeek -> deepSeekKey = key
-            else -> {}
+            AssistantProvider.OPENAI -> openAIKey = key
+            AssistantProvider.DEEPSEEK -> deepSeekKey = key
+            AssistantProvider.CUSTOM -> customKey = key
         }
     }
 
-    override fun selectProvider(provider: LLMProvider) {
+    override fun setCustomBaseUrl(baseUrl: String) {
+        customBaseUrl = baseUrl.trim()
+    }
+
+    override fun selectProvider(provider: AssistantProvider) {
         selectedProvider = provider
         selectedModel = when (provider) {
-            LLMProvider.OpenAI -> OpenAIModels.Chat.GPT4o
-            LLMProvider.DeepSeek -> DeepSeekV4Flash
-            else -> selectedModel
+            AssistantProvider.OPENAI -> OpenAIModels.Chat.GPT4o
+            AssistantProvider.DEEPSEEK -> DeepSeekV4Flash
+            AssistantProvider.CUSTOM -> customOpenAIModel("gpt-4o-mini")
         }
     }
 
@@ -353,7 +409,7 @@ Don't save trivial or one-off details.
 
     override fun selectModelByName(name: String) {
         val known = when (selectedProvider) {
-            LLMProvider.OpenAI -> listOf(
+            AssistantProvider.OPENAI -> listOf(
                 OpenAIModels.Chat.GPT5_5,
                 OpenAIModels.Chat.GPT5_4,
                 OpenAIModels.Chat.GPT5_4Mini,
@@ -371,14 +427,18 @@ Don't save trivial or one-off details.
                 OpenAIModels.Chat.O3Mini,
                 OpenAIModels.Chat.O4Mini
             )
-            LLMProvider.DeepSeek -> listOf(
+            AssistantProvider.DEEPSEEK -> listOf(
                 DeepSeekV4Flash,
                 DeepSeekV4Pro
             )
-            else -> emptyList()
+            AssistantProvider.CUSTOM -> emptyList()
         }
         selectedModel = known.firstOrNull { it.id == name }
-            ?: LLModel(provider = selectedProvider, id = name)
+            ?: when (selectedProvider) {
+                AssistantProvider.OPENAI -> LLModel(provider = LLMProvider.OpenAI, id = name)
+                AssistantProvider.DEEPSEEK -> LLModel(provider = LLMProvider.DeepSeek, id = name)
+                AssistantProvider.CUSTOM -> customOpenAIModel(name)
+            }
     }
 
     override fun getCurrentModel(): LLModel = selectedModel
@@ -404,7 +464,19 @@ Don't save trivial or one-off details.
             val result = agent.run(prompt, null)
             Result.success(result)
         } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "chat failed provider=$selectedProvider model=${selectedModel.id} " +
+                    "causeChain=${e.causeChain()}",
+                e
+            )
             Result.failure(e)
         }
     }
+
+    private fun Throwable.causeChain(): String = generateSequence(this) { it.cause }
+        .take(6)
+        .joinToString(" <- ") { cause ->
+            "${cause.javaClass.simpleName}: ${cause.message ?: "(no message)"}"
+        }
 }

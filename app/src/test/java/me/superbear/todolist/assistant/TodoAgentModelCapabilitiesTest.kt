@@ -30,6 +30,36 @@ class TodoAgentModelCapabilitiesTest {
     }
 
     @Test
+    fun customModelsUseOpenAIChatCompletionsWithToolCalling() {
+        val model = TodoAgent.customOpenAIModel("local-model")
+
+        assertEquals("local-model", model.id)
+        assertTrue(model.supports(LLMCapability.OpenAIEndpoint.Completions))
+        assertFalse(model.supports(LLMCapability.OpenAIEndpoint.Responses))
+        assertTrue(model.supports(LLMCapability.Tools))
+        assertTrue(model.supports(LLMCapability.ToolChoice))
+    }
+
+    @Test
+    fun customBaseUrlAcceptsOptionalV1Suffix() {
+        val withoutV1 = TodoAgent.customOpenAISettings("https://example.com/")
+        val withV1 = TodoAgent.customOpenAISettings("https://example.com/v1/")
+
+        assertEquals("https://example.com", withoutV1.baseUrl)
+        assertEquals("v1/chat/completions", withoutV1.chatCompletionsPath)
+        assertEquals("https://example.com", withV1.baseUrl)
+        assertEquals("v1/chat/completions", withV1.chatCompletionsPath)
+    }
+
+    @Test
+    fun ollamaBaseUrlWithV1ResolvesToOpenAICompatibleEndpoint() {
+        val settings = TodoAgent.customOpenAISettings("http://192.168.2.26:11434/v1")
+
+        assertEquals("http://192.168.2.26:11434", settings.baseUrl)
+        assertEquals("v1/chat/completions", settings.chatCompletionsPath)
+    }
+
+    @Test
     fun deepSeekModelsDoNotClaimTheResponsesEndpoint() {
         // DeepSeek only implements the classic chat-completions endpoint, not OpenAI's
         // proprietary Responses API.
